@@ -46,6 +46,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .lbnm{flex:1}.lbpts{font-weight:500;min-width:46px;text-align:right}
 .lbst{font-size:11px;padding:2px 7px;border-radius:4px;min-width:68px;text-align:center}
 .s-active{background:#00757320;color:#007573}.s-eliminated{background:#E2535320;color:#A32D2D}.s-waiting{background:#f5f5f5;color:#888}
+.import-zone{background:#fff;border:2px dashed #ccc;border-radius:12px;padding:2rem;text-align:center;cursor:pointer;transition:border-color 0.2s}
+.import-zone:hover,.import-zone.dragover{border-color:#FA8D29}
+.import-zone p{font-size:13px;color:#888;margin-top:6px}
+.import-preview{background:#fff;border:0.5px solid #ddd;border-radius:12px;overflow:hidden;margin-top:1rem}
+.import-preview .lbr{display:flex;align-items:center;gap:12px;padding:6px 14px;border-bottom:0.5px solid #eee;font-size:12px}
+.import-preview .lbr:last-child{border-bottom:none}
+.import-actions{display:flex;gap:8px;justify-content:center;margin-top:1rem}
+.import-msg{font-size:12px;margin-top:10px;padding:8px 12px;border-radius:8px}
+.import-msg.success{background:#00757320;color:#007573}
+.import-msg.error{background:#E2535320;color:#A32D2D}
 </style>
 </head>
 <body>
@@ -59,6 +69,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <button class="tab" onclick="showTab('score')">Enter Scores</button>
   <button class="tab" onclick="showTab('rules')">Scoring Rules</button>
   <button class="tab" onclick="showTab('leaderboard')">Leaderboard</button>
+  <button class="tab" onclick="showTab('import')">Import Teams</button>
 </div>
 <div id="adminBar" style="display:none;text-align:center;margin-bottom:10px">
   <span style="font-size:11px;color:#007573;font-weight:500">Admin Mode</span>
@@ -117,6 +128,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div id="tab-leaderboard" class="section">
   <div class="lboard" id="leaderboardView"></div>
 </div>
+<div id="tab-import" class="section">
+  <div style="max-width:600px;margin:0 auto">
+    <h3 style="font-size:14px;margin-bottom:8px">Import Leaderboard from Excel</h3>
+    <p style="font-size:12px;color:#888;margin-bottom:1rem">Upload a Leaderboard .xlsx file. The sheet named "data" should have rows with Rank in column A and "Name|District" in column B. Teams will be seeded 1–43 in row order.</p>
+    <div class="import-zone" id="importZone" onclick="document.getElementById('importFile').click()">
+      <div style="font-size:24px;color:#ccc">+</div>
+      <p>Click or drag an .xlsx file here</p>
+      <input type="file" id="importFile" accept=".xlsx,.xls" style="display:none" onchange="handleImportFile(this.files[0])"/>
+    </div>
+    <div id="importPreview"></div>
+    <div id="importMsg"></div>
+  </div>
+</div>
 </div>
 
 <script>
@@ -173,8 +197,12 @@ function refreshUI(){syncAllRounds();renderBracket();renderLeaderboard();renderS
 
 async function loadState(){
   try{
-    const res=await fetch(API_BASE+'/api/state');
-    const data=await res.json();
+    const [teamsRes,res]=await Promise.all([fetch(API_BASE+'/api/teams'),fetch(API_BASE+'/api/state')]);
+    const [teamsData,data]=await Promise.all([teamsRes.json(),res.json()]);
+    if(teamsData.teams&&teamsData.teams.length>0){
+      D=teamsData.teams;
+      state.rounds=buildBracket();
+    }
     if(data.scores)state.scores=data.scores;
     if(data.totalPts)state.totalPts=data.totalPts;
     if(data.winners){
@@ -201,18 +229,18 @@ async function loadState(){
   }catch(e){console.log('Running locally, no API');}
 }
 
-const D=[
+let D=[
   {s:1,dm:'Anthony Leija',n:'Michigan West'},
   {s:2,dm:'Rod Robles',n:'Phoenix West'},
   {s:3,dm:'Sylvia Espinoza',n:'NorCal Nevada'},
-  {s:4,dm:'Brian Connelly',n:'E. Washington'},
+  {s:4,dm:'Brian Connelly',n:'Eastern Washington'},
   {s:5,dm:'Joe Pennington',n:'Idaho'},
   {s:6,dm:'Noah Gregg',n:'Phoenix East'},
   {s:7,dm:'Edward Antonelli',n:'Wichita Tulsa'},
   {s:8,dm:'Paul Aispuro Rios',n:'Inland Empire'},
   {s:9,dm:'Aaron Campbell',n:'Central PA'},
   {s:10,dm:'Noe Onofre',n:'LA Central'},
-  {s:11,dm:'Daniel J. Greene',n:'Michigan East'},
+  {s:11,dm:'Daniel John Greene',n:'Michigan East'},
   {s:12,dm:'Carlos Lozano',n:'Minnesota South'},
   {s:13,dm:'Andrew Fuerte Perez',n:'The Bronx'},
   {s:14,dm:'Whitley Schnelle',n:'West Missouri'},
@@ -246,6 +274,107 @@ const D=[
   {s:42,dm:'Maricela Luna',n:'Wisconsin South'},
   {s:43,dm:'Oscar Rodriguez',n:'Utah Oregon'}
 ];
+
+function applyTeams(teams){
+  D=teams;
+  state.rounds=buildBracket();
+  state.scores={};state.totalPts={};
+  refreshUI();
+}
+
+// --- Excel import (browser-side, lazy-loads SheetJS) ---
+let pendingImportTeams=null;
+let sheetjsLoaded=false;
+
+function loadSheetJS(){
+  if(sheetjsLoaded)return Promise.resolve();
+  return new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+    s.onload=()=>{sheetjsLoaded=true;resolve();};
+    s.onerror=()=>reject(new Error('Failed to load Excel library.'));
+    document.head.appendChild(s);
+  });
+}
+
+function parseLeaderboardXlsx(arrayBuffer){
+  const wb=XLSX.read(arrayBuffer,{type:'array'});
+  const ws=wb.Sheets['data'];
+  if(!ws)throw new Error('No "data" sheet found in this file.');
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1});
+  const teams=[];
+  for(let i=4;i<rows.length;i++){
+    const row=rows[i];
+    if(row[0]==null||!row[1])continue;
+    const parts=String(row[1]).split('|');
+    if(parts.length!==2)continue;
+    const dm=parts[0].trim(),n=parts[1].trim();
+    if(!dm||!n)continue;
+    teams.push({s:teams.length+1,dm,n});
+  }
+  if(teams.length===0)throw new Error('No teams found. Check that column B has "Name|District" format.');
+  return teams;
+}
+
+function sanitize(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+
+async function handleImportFile(file){
+  if(!file)return;
+  const msg=document.getElementById('importMsg');
+  msg.innerHTML='';
+  try{
+    await loadSheetJS();
+    const buf=await file.arrayBuffer();
+    const teams=parseLeaderboardXlsx(buf);
+    pendingImportTeams=teams;
+    renderImportPreview(teams,file.name);
+  }catch(err){
+    msg.innerHTML=`<div class="import-msg error">${sanitize(err.message)}</div>`;
+  }
+}
+
+function renderImportPreview(teams,filename){
+  const prev=document.getElementById('importPreview');
+  prev.innerHTML=`<div style="font-size:12px;color:#555;margin-top:12px;margin-bottom:6px"><strong>${sanitize(filename)}</strong> — ${teams.length} teams found</div>
+    <div class="import-preview">${teams.map(t=>`<div class="lbr"><span style="font-weight:500;color:#FA8D29;min-width:26px">#${t.s}</span><span style="flex:1">${sanitize(t.n)} <span style="font-size:11px;color:#888">${sanitize(t.dm)}</span></span></div>`).join('')}</div>
+    <div class="import-actions">
+      <button onclick="cancelImport()" style="padding:6px 16px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;font-size:12px">Cancel</button>
+      <button onclick="confirmImport()" class="adv-btn">Save &amp; Apply to Bracket</button>
+    </div>`;
+}
+
+function clearImportUI(){
+  pendingImportTeams=null;
+  document.getElementById('importPreview').innerHTML='';
+  document.getElementById('importMsg').innerHTML='';
+  document.getElementById('importFile').value='';
+}
+
+function cancelImport(){clearImportUI();}
+
+async function confirmImport(){
+  if(!pendingImportTeams)return;
+  if(!isAdmin()){showPasswordModal(()=>confirmImport());return;}
+  const msg=document.getElementById('importMsg');
+  try{
+    const res=await apiPost('/api/teams',{teams:pendingImportTeams});
+    if(!res.ok)throw new Error('Server error: '+res.status);
+    applyTeams(pendingImportTeams);
+    clearImportUI();
+    msg.innerHTML='<div class="import-msg success">Teams imported successfully! Bracket has been reset with new seedings.</div>';
+  }catch(err){
+    msg.innerHTML=`<div class="import-msg error">Failed to save: ${sanitize(err.message)}</div>`;
+  }
+}
+
+// Drag & drop support
+document.addEventListener('DOMContentLoaded',()=>{
+  const zone=document.getElementById('importZone');
+  if(!zone)return;
+  zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('dragover');});
+  zone.addEventListener('dragleave',()=>zone.classList.remove('dragover'));
+  zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('dragover');if(e.dataTransfer.files.length)handleImportFile(e.dataTransfer.files[0]);});
+});
 
 const ROUND_LABELS=['Round of 43','Round of 32','Round of 11','Elite 6','Final 3','Championship'];
 const ROUND_DAYS=[4,4,3,3,3,3];
@@ -548,8 +677,9 @@ function renderLeaderboard(){
 }
 
 function showTab(name){
-  if(name==='score'&&!isAdmin()){showPasswordModal(()=>showTab('score'));return;}
-  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['bracket','score','rules','leaderboard'][i]===name));
+  if((name==='score'||name==='import')&&!isAdmin()){showPasswordModal(()=>showTab(name));return;}
+  const tabs=['bracket','score','rules','leaderboard','import'];
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===name));
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
   if(name==='leaderboard')renderLeaderboard();

@@ -50,6 +50,22 @@ export default {
       return Response.json({ ok: true }, { headers: CORS });
     }
 
+    if (url.pathname === '/api/teams') {
+      if (request.method === 'GET') {
+        const teams = await env.BRACKET_KV.get('teams', 'json');
+        return Response.json({ teams }, { headers: CORS });
+      }
+      if (request.method === 'POST') {
+        const denied = requireAuth(request, env);
+        if (denied) return denied;
+        const body = await request.json();
+        await env.BRACKET_KV.put('teams', JSON.stringify(body.teams));
+        // Reset bracket state when teams change
+        await env.BRACKET_KV.put('bracket-state', JSON.stringify({ ...DEFAULT_STATE }));
+        return Response.json({ ok: true }, { headers: CORS });
+      }
+    }
+
     if (url.pathname === '/api/reset' && request.method === 'POST') {
       const denied = requireAuth(request, env);
       if (denied) return denied;
