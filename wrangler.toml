@@ -1,0 +1,15 @@
+name = "marchmadness"
+main = "src/worker.js"
+compatibility_date = "2024-01-01"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.html"]
+fallthrough = false
+
+[vars]
+ADMIN_PASSWORD = "WV2026!"
+
+[[kv_namespaces]]
+binding = "BRACKET_KV"
+id = "fdd8168fa5704cbcb3d59eb4e8c5d2e8"
