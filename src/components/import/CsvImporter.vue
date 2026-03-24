@@ -3,12 +3,52 @@ import { ref, computed } from 'vue'
 import type { ScoreMetrics } from '@/shared/types'
 import { calcTotal } from '@/shared/scoring'
 import { ROUND_LABELS } from '@/shared/constants'
-import { postAdvanceBatch } from '@/api/client'
+import { postAdvanceBatch, postImportLog, fetchImportLog, deleteImportLog } from '@/api/client'
+import type { ImportLogEntry } from '@/api/client'
 import { useBracketStore } from '@/stores/bracket'
 import { useAuthStore } from '@/stores/auth'
+import SubTabs from '@/components/SubTabs.vue'
 
 const store = useBracketStore()
 const auth = useAuthStore()
+
+const subTab = ref('import')
+const importTabs = [
+  { key: 'import', label: 'Import Scores' },
+  { key: 'history', label: 'Import History' },
+]
+
+const importLog = ref<ImportLogEntry[]>([])
+
+async function loadImportLog(): Promise<void> {
+  try { importLog.value = await fetchImportLog() } catch { /* ignore */ }
+}
+
+function downloadCsv(entry: ImportLogEntry): void {
+  const blob = new Blob([entry.csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${entry.round}-${entry.date.slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
+async function removeLogEntry(entry: ImportLogEntry): Promise<void> {
+  await deleteImportLog(auth.adminPassword, entry.id)
+  importLog.value = importLog.value.filter(e => e.id !== entry.id)
+}
+
+function onSubTabSelect(key: string): void {
+  subTab.value = key
+  if (key === 'history') { loadImportLog() }
+}
 
 // --- Round Score Import (CSV) ---
 interface PendingMatch {
@@ -159,6 +199,8 @@ async function applyCSVScores(): Promise<void> {
         points: Math.max(m.pA, m.pB),
       }))
       await postAdvanceBatch(auth.adminPassword, batch)
+      const roundLabel = ROUND_LABELS[csvRound.value] || `Round ${csvRound.value}`
+      await postImportLog(auth.adminPassword, roundLabel, csvPaste.value)
       pendingMatches.value!.forEach(m => {
         store.scores[m.key] = { A: m.scA, B: m.scB }
         const match = store.rounds[m.ri][m.mi]
@@ -168,6 +210,7 @@ async function applyCSVScores(): Promise<void> {
         store.totalPts[m.winner.s] = (store.totalPts[m.winner.s] || 0) + Math.max(m.pA, m.pB)
       })
       store.syncAll()
+      loadImportLog()
       pendingMatches.value = null
       csvPaste.value = ''
       csvMsg.value = { type: 'success', text: 'All scores applied and winners advanced!' }
@@ -189,6 +232,9 @@ const isReupload = computed(() => {
 
 <template>
   <div class="import-container">
+    <SubTabs :tabs="importTabs" :active="subTab" @select="onSubTabSelect" />
+
+    <div v-if="subTab === 'import'">
       <p class="section-desc">
         Paste CSV with columns: DISTRICT, GROSS REV %, NET HSI%, POST CONV, HSI.
         Click <strong>Preview</strong> to see results, then <strong>Apply</strong> to update the bracket.
@@ -252,6 +298,21 @@ const isReupload = computed(() => {
       </div>
 
       <div v-if="csvMsg" class="msg" :class="csvMsg.type">{{ csvMsg.text }}</div>
+    </div>
+
+    <div v-if="subTab === 'history'">
+      <div v-if="importLog.length === 0" class="empty-history">No imports yet.</div>
+      <div v-for="entry in importLog" :key="entry.id" class="history-row">
+        <div class="history-info">
+          <div class="history-round">{{ entry.round }}</div>
+          <div class="history-date">{{ formatDate(entry.date) }}</div>
+        </div>
+        <div class="history-actions">
+          <button class="btn-outline" @click="downloadCsv(entry)">Download</button>
+          <button class="btn-delete" @click="removeLogEntry(entry)">Delete</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -435,4 +496,49 @@ const isReupload = computed(() => {
 
 .msg.success { background: #00757320; color: #007573; }
 .msg.error { background: #E2535320; color: #A32D2D; }
+
+.empty-history {
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+  padding: 2rem 0;
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: #fff;
+}
+
+.history-round {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a1a1a;
+}
+
+.history-date {
+  font-size: 11px;
+  color: #999;
+  margin-top: 2px;
+}
+
+.history-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-delete {
+  padding: 4px 12px;
+  border: 1px solid #E25353;
+  border-radius: 6px;
+  background: #fff;
+  color: #E25353;
+  cursor: pointer;
+  font-size: 11px;
+}
 </style>

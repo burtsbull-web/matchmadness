@@ -15,7 +15,7 @@ export const TABS: TabDef[] = [
   { key: 'leaderboard', label: 'Leaderboard', mobileLabel: 'Rankings', icon: 'list', adminOnly: false },
   { key: 'rules', label: 'Scoring Rules', mobileLabel: 'Rules', icon: 'book', adminOnly: false },
   { key: 'score', label: 'Enter Scores', mobileLabel: 'Scores', icon: 'edit', adminOnly: true },
-  { key: 'import', label: 'Import Teams', mobileLabel: 'Import', icon: 'upload', adminOnly: true },
+  { key: 'import', label: 'Import Rounds', mobileLabel: 'Import', icon: 'upload', adminOnly: true },
 ]
 
 export function selectTab(

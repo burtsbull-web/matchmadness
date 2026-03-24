@@ -55,3 +55,38 @@ export async function postUndo(
   await apiPost('/api/undo', { matchId, clearMatchIds }, password)
 }
 
+export interface ImportLogEntry {
+  id: string
+  round: string
+  date: string
+  csv: string
+}
+
+export async function fetchImportLog(): Promise<ImportLogEntry[]> {
+  const res = await fetch(`${API_BASE}/api/import-log`)
+  const data = await res.json() as { log: ImportLogEntry[] }
+  return data.log
+}
+
+export async function postImportLog(
+  password: string | null,
+  round: string,
+  csv: string,
+): Promise<void> {
+  await apiPost('/api/import-log', { round, csv }, password)
+}
+
+export async function deleteImportLog(
+  password: string | null,
+  id: string,
+): Promise<void> {
+  await fetch(`${API_BASE}/api/import-log`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(password ? { 'X-Admin-Password': password } : {}),
+    },
+    body: JSON.stringify({ id }),
+  })
+}
+

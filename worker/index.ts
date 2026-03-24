@@ -9,7 +9,7 @@ const DEFAULT_STATE = { scores: {}, winners: {}, totalPts: {} }
 
 const CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Password',
 }
 
@@ -110,6 +110,32 @@ export default {
       recalcTotalPts(current)
       await env.BRACKET_KV.put('bracket-state', JSON.stringify(current))
       return Response.json({ ok: true }, { headers: CORS })
+    }
+
+    if (url.pathname === '/api/import-log') {
+      type LogEntry = { id: string; round: string; date: string; csv: string }
+      const getLog = async () => await env.BRACKET_KV.get('import-log', 'json') as LogEntry[] || []
+
+      if (request.method === 'GET') {
+        return Response.json({ log: await getLog() }, { headers: CORS })
+      }
+      if (request.method === 'POST') {
+        const denied = requireAuth(request, env)
+        if (denied) { return denied }
+        const body = await request.json() as { round: string; csv: string }
+        const log = await getLog()
+        log.unshift({ id: crypto.randomUUID(), round: body.round, date: new Date().toISOString(), csv: body.csv })
+        await env.BRACKET_KV.put('import-log', JSON.stringify(log))
+        return Response.json({ ok: true }, { headers: CORS })
+      }
+      if (request.method === 'DELETE') {
+        const denied = requireAuth(request, env)
+        if (denied) { return denied }
+        const body = await request.json() as { id: string }
+        const log = await getLog()
+        await env.BRACKET_KV.put('import-log', JSON.stringify(log.filter(e => e.id !== body.id)))
+        return Response.json({ ok: true }, { headers: CORS })
+      }
     }
 
     if (url.pathname === '/api/reset' && request.method === 'POST') {
