@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Match } from '@/shared/types'
+import type { Match, ScoreData } from '@/shared/types'
 import { calcTotal } from '@/shared/scoring'
+import { WB_ACCENT, LB_ACCENT } from '@/shared/constants'
 import { useBracketStore } from '@/stores/bracket'
 import { useAuthStore } from '@/stores/auth'
+
+const EMPTY_SCORE: ScoreData = { A: { hc: '', pp: '', rv: '', hg: '' }, B: { hc: '', pp: '', rv: '', hg: '' } }
 
 const props = defineProps<{
   match: Match
@@ -14,9 +17,9 @@ const props = defineProps<{
 const store = useBracketStore()
 const auth = useAuthStore()
 
-const accent = computed(() => props.isLB ? '#E25353' : '#FA8D29')
+const accent = computed(() => props.isLB ? LB_ACCENT : WB_ACCENT)
 
-const sc = computed(() => store.scores[props.matchKey] || store.emptyScore())
+const sc = computed(() => store.scores[props.matchKey] || EMPTY_SCORE)
 
 const pA = computed(() => calcTotal(sc.value.A))
 const pB = computed(() => calcTotal(sc.value.B))

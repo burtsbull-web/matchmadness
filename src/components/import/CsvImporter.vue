@@ -131,7 +131,7 @@ function parseAndPreviewCSV(): void {
   })
 
   const ri = csvRound.value
-  store.syncAllRounds()
+  store.syncAll()
   const round = store.rounds[ri]
   if (!round) {
     csvMsg.value = { type: 'error', text: 'Invalid round selected.' }
