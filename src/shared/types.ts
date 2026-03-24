@@ -41,4 +41,13 @@ export interface RankedTeam extends Team {
 
 export type Side = 'A' | 'B'
 export type BracketType = 'wb' | 'lb'
-export type TabName = 'bracket' | 'score' | 'rules' | 'leaderboard' | 'import'
+export interface TrashTalkMessage {
+  id: string
+  author: string
+  message: string
+  date: string
+  upvotes: string[]
+  downvotes: string[]
+}
+
+export type TabName = 'bracket' | 'score' | 'rules' | 'leaderboard' | 'import' | 'trash-talk'

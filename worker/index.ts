@@ -138,6 +138,64 @@ export default {
       }
     }
 
+    // --- Trash Talk ---
+    if (url.pathname === '/api/trash-talk' || url.pathname === '/api/trash-talk/vote') {
+      type TTMessage = { id: string; author: string; message: string; date: string; upvotes: string[]; downvotes: string[] }
+      const getMessages = async () => (await env.BRACKET_KV.get('trash-talk', 'json') as TTMessage[]) || []
+
+      if (url.pathname === '/api/trash-talk' && request.method === 'GET') {
+        return Response.json({ messages: await getMessages() }, { headers: CORS })
+      }
+
+      if (url.pathname === '/api/trash-talk' && request.method === 'POST') {
+        const body = await request.json() as { author: string; message: string }
+        const author = (body.author || '').trim().slice(0, 30)
+        const message = (body.message || '').trim().slice(0, 500)
+        if (!author || !message) {
+          return Response.json({ error: 'Author and message required' }, { status: 400, headers: CORS })
+        }
+        const messages = await getMessages()
+        messages.unshift({
+          id: crypto.randomUUID(),
+          author,
+          message,
+          date: new Date().toISOString(),
+          upvotes: [],
+          downvotes: [],
+        })
+        if (messages.length > 200) { messages.length = 200 }
+        await env.BRACKET_KV.put('trash-talk', JSON.stringify(messages))
+        return Response.json({ ok: true }, { headers: CORS })
+      }
+
+      if (url.pathname === '/api/trash-talk/vote' && request.method === 'POST') {
+        const body = await request.json() as { id: string; voterId: string; vote: 'up' | 'down' | 'none' }
+        if (!body.id || !body.voterId || !['up', 'down', 'none'].includes(body.vote)) {
+          return Response.json({ error: 'Invalid vote' }, { status: 400, headers: CORS })
+        }
+        const messages = await getMessages()
+        const msg = messages.find(m => m.id === body.id)
+        if (!msg) {
+          return Response.json({ error: 'Message not found' }, { status: 404, headers: CORS })
+        }
+        msg.upvotes = msg.upvotes.filter(v => v !== body.voterId)
+        msg.downvotes = msg.downvotes.filter(v => v !== body.voterId)
+        if (body.vote === 'up') { msg.upvotes.push(body.voterId) }
+        else if (body.vote === 'down') { msg.downvotes.push(body.voterId) }
+        await env.BRACKET_KV.put('trash-talk', JSON.stringify(messages))
+        return Response.json({ ok: true }, { headers: CORS })
+      }
+
+      if (url.pathname === '/api/trash-talk' && request.method === 'DELETE') {
+        const denied = requireAuth(request, env)
+        if (denied) { return denied }
+        const body = await request.json() as { id: string }
+        const messages = await getMessages()
+        await env.BRACKET_KV.put('trash-talk', JSON.stringify(messages.filter(m => m.id !== body.id)))
+        return Response.json({ ok: true }, { headers: CORS })
+      }
+    }
+
     if (url.pathname === '/api/reset' && request.method === 'POST') {
       const denied = requireAuth(request, env)
       if (denied) { return denied }

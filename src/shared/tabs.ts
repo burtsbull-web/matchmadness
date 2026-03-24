@@ -1,6 +1,6 @@
 import type { TabName } from './types'
 
-export type IconName = 'trophy' | 'list' | 'book' | 'edit' | 'upload'
+export type IconName = 'trophy' | 'list' | 'book' | 'edit' | 'upload' | 'megaphone'
 
 export interface TabDef {
   key: TabName
@@ -14,6 +14,7 @@ export const TABS: TabDef[] = [
   { key: 'bracket', label: 'Bracket', mobileLabel: 'Bracket', icon: 'trophy', adminOnly: false },
   { key: 'leaderboard', label: 'Leaderboard', mobileLabel: 'Rankings', icon: 'list', adminOnly: false },
   { key: 'rules', label: 'Scoring Rules', mobileLabel: 'Rules', icon: 'book', adminOnly: false },
+  { key: 'trash-talk', label: 'Trash Talk', mobileLabel: 'Talk', icon: 'megaphone', adminOnly: false },
   { key: 'score', label: 'Enter Scores', mobileLabel: 'Scores', icon: 'edit', adminOnly: true },
   { key: 'import', label: 'Import Rounds', mobileLabel: 'Import', icon: 'upload', adminOnly: true },
 ]

@@ -11,6 +11,7 @@ import ScoreEntry from '@/components/score/ScoreEntry.vue'
 import ScoringRules from '@/components/rules/ScoringRules.vue'
 import LeaderboardView from '@/components/leaderboard/LeaderboardView.vue'
 import CsvImporter from '@/components/import/CsvImporter.vue'
+import TrashTalkView from '@/components/trashTalk/TrashTalkView.vue'
 
 const store = useBracketStore()
 const auth = useAuthStore()
@@ -47,6 +48,7 @@ onMounted(() => {
       <ScoreEntry v-if="store.activeTab === 'score'" />
       <ScoringRules v-if="store.activeTab === 'rules'" />
       <LeaderboardView v-if="store.activeTab === 'leaderboard'" />
+      <TrashTalkView v-if="store.activeTab === 'trash-talk'" />
       <CsvImporter v-if="store.activeTab === 'import'" />
     </div>
 

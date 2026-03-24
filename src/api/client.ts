@@ -1,20 +1,29 @@
-import type { ApiState, ScoreData } from '@/shared/types'
+import type { ApiState, ScoreData, TrashTalkMessage } from '@/shared/types'
 
 const API_BASE = location.origin
 
-export async function apiPost(
+function apiFetch(
   endpoint: string,
+  method: string,
   body: unknown,
   password: string | null,
 ): Promise<Response> {
   return fetch(`${API_BASE}${endpoint}`, {
-    method: 'POST',
+    method,
     headers: {
       'Content-Type': 'application/json',
       ...(password ? { 'X-Admin-Password': password } : {}),
     },
     body: JSON.stringify(body),
   })
+}
+
+export function apiPost(endpoint: string, body: unknown, password: string | null): Promise<Response> {
+  return apiFetch(endpoint, 'POST', body, password)
+}
+
+export function apiDelete(endpoint: string, body: unknown, password: string | null): Promise<Response> {
+  return apiFetch(endpoint, 'DELETE', body, password)
 }
 
 export async function verifyPassword(password: string): Promise<boolean> {
@@ -76,17 +85,40 @@ export async function postImportLog(
   await apiPost('/api/import-log', { round, csv }, password)
 }
 
-export async function deleteImportLog(
-  password: string | null,
-  id: string,
-): Promise<void> {
-  await fetch(`${API_BASE}/api/import-log`, {
-    method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(password ? { 'X-Admin-Password': password } : {}),
-    },
-    body: JSON.stringify({ id }),
+export async function deleteImportLog(password: string | null, id: string): Promise<void> {
+  await apiDelete('/api/import-log', { id }, password)
+}
+
+// --- Trash Talk ---
+
+export async function fetchTrashTalk(): Promise<TrashTalkMessage[]> {
+  const res = await fetch(`${API_BASE}/api/trash-talk`)
+  const data = await res.json() as { messages: TrashTalkMessage[] }
+  return data.messages
+}
+
+export async function postTrashTalk(author: string, message: string): Promise<void> {
+  await fetch(`${API_BASE}/api/trash-talk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ author, message }),
   })
+}
+
+export async function voteTrashTalk(
+  messageId: string,
+  voterId: string,
+  vote: 'up' | 'down' | 'none',
+): Promise<void> {
+  await fetch(`${API_BASE}/api/trash-talk/vote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: messageId, voterId, vote }),
+  })
+}
+
+export async function deleteTrashTalk(password: string | null, id: string): Promise<boolean> {
+  const res = await apiDelete('/api/trash-talk', { id }, password)
+  return res.ok
 }
 

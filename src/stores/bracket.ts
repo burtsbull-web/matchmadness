@@ -1,9 +1,9 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
-import type { Team, Match, ScoreData, ScoreMetrics, TabName, BracketType, Side, RankedTeam } from '@/shared/types'
+import type { Team, Match, ScoreData, ScoreMetrics, TabName, BracketType, Side, RankedTeam, TrashTalkMessage } from '@/shared/types'
 import { calcTotal } from '@/shared/scoring'
 import { DEFAULT_TEAMS } from '@/shared/constants'
-import { loadRemoteState, postAdvance, postUndo } from '@/api/client'
+import { loadRemoteState, postAdvance, postUndo, fetchTrashTalk, postTrashTalk, voteTrashTalk, deleteTrashTalk } from '@/api/client'
 import { useAuthStore } from './auth'
 
 function emptyScore(): ScoreData {
@@ -55,6 +55,8 @@ export const useBracketStore = defineStore('bracket', () => {
   const curLBRound = ref(0)
   const hoveredSeed = ref<number | null>(null)
   const lbHoveredSeed = ref<number | null>(null)
+  const trashTalkMessages = ref<TrashTalkMessage[]>([])
+  const trashTalkLoaded = ref(false)
 
   const byeTeam = computed<Team>(() => ({ ...teams.value[0] }))
 
@@ -384,6 +386,65 @@ export const useBracketStore = defineStore('bracket', () => {
     }).sort((a, b) => b.pts - a.pts)
   })
 
+  function getVoterId(): string {
+    const KEY = 'trash-talk-voter-id'
+    let id = localStorage.getItem(KEY)
+    if (!id) {
+      id = crypto.randomUUID()
+      localStorage.setItem(KEY, id)
+    }
+    return id
+  }
+
+  async function loadTrashTalk(): Promise<void> {
+    try {
+      trashTalkMessages.value = await fetchTrashTalk()
+      trashTalkLoaded.value = true
+    } catch {
+      console.log('Failed to load trash talk')
+    }
+  }
+
+  async function submitTrashTalk(author: string, message: string): Promise<void> {
+    trashTalkMessages.value = [{
+      id: crypto.randomUUID(),
+      author,
+      message,
+      date: new Date().toISOString(),
+      upvotes: [],
+      downvotes: [],
+    }, ...trashTalkMessages.value]
+    await postTrashTalk(author, message)
+  }
+
+  async function voteOnTrashTalk(messageId: string, vote: 'up' | 'down'): Promise<void> {
+    const voterId = getVoterId()
+    const msg = trashTalkMessages.value.find(m => m.id === messageId)
+    if (!msg) return
+
+    const hadUpvote = msg.upvotes.includes(voterId)
+    const hadDownvote = msg.downvotes.includes(voterId)
+
+    let effectiveVote: 'up' | 'down' | 'none' = vote
+    if ((vote === 'up' && hadUpvote) || (vote === 'down' && hadDownvote)) {
+      effectiveVote = 'none'
+    }
+
+    msg.upvotes = msg.upvotes.filter(v => v !== voterId)
+    msg.downvotes = msg.downvotes.filter(v => v !== voterId)
+    if (effectiveVote === 'up') { msg.upvotes.push(voterId) }
+    else if (effectiveVote === 'down') { msg.downvotes.push(voterId) }
+
+    await voteTrashTalk(messageId, voterId, effectiveVote)
+  }
+
+  async function removeTrashTalk(messageId: string): Promise<void> {
+    const ok = await deleteTrashTalk(auth.adminPassword, messageId)
+    if (ok) {
+      trashTalkMessages.value = trashTalkMessages.value.filter(m => m.id !== messageId)
+    }
+  }
+
   // Initialize
   rounds.value = buildBracket()
   lbRounds.value = buildLosersBracket()
@@ -411,5 +472,12 @@ export const useBracketStore = defineStore('bracket', () => {
     loadState,
     recalcTotalPts,
     emptyScore,
+    trashTalkMessages,
+    trashTalkLoaded,
+    getVoterId,
+    loadTrashTalk,
+    submitTrashTalk,
+    voteOnTrashTalk,
+    removeTrashTalk,
   }
 })
