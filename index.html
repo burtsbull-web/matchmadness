@@ -161,6 +161,29 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <div id="importPreview"></div>
     <div id="importMsg"></div>
+
+    <hr style="margin:2rem 0;border:none;border-top:1px solid #eee">
+
+    <h3 style="font-size:14px;margin-bottom:8px">Import Round Scores from CSV</h3>
+    <p style="font-size:12px;color:#888;margin-bottom:8px">Paste CSV data with columns: DISTRICT, GROSS REV %, NET HSI%, POST CONV, HSI. Matches districts to the selected round's matchups, calculates scores, and advances winners.</p>
+    <div style="margin-bottom:10px">
+      <label style="font-size:12px;color:#555">Target Round:</label>
+      <select id="csvRoundSelect" style="margin-left:6px;padding:4px 8px;border:1px solid #ccc;border-radius:6px;font-size:12px">
+        <option value="1">Round of 32</option>
+        <option value="2">Round of 11</option>
+        <option value="3">Elite 6</option>
+        <option value="4">Final 3</option>
+        <option value="5">Championship</option>
+      </select>
+    </div>
+    <textarea id="csvPaste" rows="8" style="width:100%;font-size:11px;font-family:monospace;border:1px solid #ccc;border-radius:8px;padding:8px;box-sizing:border-box" placeholder="Paste CSV here (include header row)..."></textarea>
+    <div id="csvPreview"></div>
+    <div style="margin-top:8px;text-align:center">
+      <button onclick="parseAndPreviewCSV()" style="padding:6px 16px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;font-size:12px;margin-right:6px">Preview</button>
+      <button id="csvApplyBtn" onclick="applyCSVScores()" class="adv-btn" style="display:none">Apply Scores &amp; Advance Winners</button>
+    </div>
+    <div id="csvMsg"></div>
+
   </div>
 </div>
 </div>
@@ -421,6 +444,152 @@ document.addEventListener('DOMContentLoaded',()=>{
   zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('dragover');if(e.dataTransfer.files.length)handleImportFile(e.dataTransfer.files[0]);});
 });
 
+// --- CSV Round Score Importer ---
+let pendingCSVMatches=null;
+
+function parseCSVRow(line){
+  const cols=line.split(',');
+  if(cols.length<5)return null;
+  const district=cols[0].trim();
+  const raw1=parseFloat(cols[1])||0;
+  const raw2=parseFloat(cols[2])||0;
+  const raw3=parseFloat(cols[3])||0;
+  const raw4=parseFloat(cols[4])||0;
+  // Auto-detect: if values look like decimals (<10), multiply by 100 to get percentages
+  const mult=(raw1<10&&raw2<10)?100:1;
+  const rv=Math.round(raw1*mult*100)/100;
+  const hg=Math.round(raw2*mult*100)/100;
+  const pp=Math.round(raw3*mult*100)/100;
+  const hc=Math.round(raw4*mult*100)/100;
+  return{district,rv,hg,pp,hc};
+}
+
+function parseAndPreviewCSV(){
+  const csv=document.getElementById('csvPaste').value.trim();
+  const msgEl=document.getElementById('csvMsg');
+  const previewEl=document.getElementById('csvPreview');
+  const applyBtn=document.getElementById('csvApplyBtn');
+  msgEl.innerHTML='';previewEl.innerHTML='';applyBtn.style.display='none';
+  if(!csv){msgEl.innerHTML='<div class="import-msg error">No CSV data pasted.</div>';return;}
+  const lines=csv.split('\n').map(l=>l.trim()).filter(l=>l);
+  if(lines.length<2){msgEl.innerHTML='<div class="import-msg error">CSV needs a header row and at least one data row.</div>';return;}
+  // Parse rows (skip header and "Total" row)
+  const rows=[];
+  for(let i=1;i<lines.length;i++){
+    const r=parseCSVRow(lines[i]);
+    if(r&&r.district.toLowerCase()!=='total')rows.push(r);
+  }
+  // Build lookup by district name (part before " - ")
+  const lookup={};
+  rows.forEach(r=>{
+    const parts=r.district.split(' - ');
+    const distName=parts.length>1?parts[0].trim():r.district;
+    lookup[distName.toLowerCase()]=r;
+  });
+  // Get target round
+  const ri=parseInt(document.getElementById('csvRoundSelect').value);
+  syncAllRounds();
+  const round=state.rounds[ri];
+  if(!round){msgEl.innerHTML='<div class="import-msg error">Invalid round selected.</div>';return;}
+
+  // If Round of 32 teams aren't populated (previous round not complete),
+  // derive them from CSV data by scoring each Round of 43 matchup
+  if(ri===1){
+    const r0=state.rounds[0],r1=state.rounds[1];
+    const needsDerive=r1.filter(m=>!m.isBye).some(m=>!m.tA||!m.tB);
+    if(needsDerive){
+      // Score each R0 match using CSV to find winners
+      const r0Winners=[];
+      for(let i=0;i<21;i++){
+        const tA=r0[i].tA, tB=r0[i].tB;
+        if(!tA||!tB){r0Winners.push(null);continue;}
+        const dA=lookup[tA.n.toLowerCase()], dB=lookup[tB.n.toLowerCase()];
+        if(!dA||!dB){r0Winners.push(null);continue;}
+        const scA={hc:String(dA.hc),pp:String(dA.pp),rv:String(dA.rv),hg:String(dA.hg)};
+        const scB={hc:String(dB.hc),pp:String(dB.pp),rv:String(dB.rv),hg:String(dB.hg)};
+        const pA=calcTotal(scA),pB=calcTotal(scB);
+        const w=pA>pB?tA:pB>pA?tB:(+dA.pp)>=(+dB.pp)?tA:tB;
+        r0[i].winner=w;r0[i].pA=pA;r0[i].pB=pB;
+        r0Winners.push(w);
+      }
+      // Populate R1 with new seeding: top vs bottom
+      r1[0].tA=byeTeam;r1[0].tB=r0Winners[20]||null;
+      for(let k=1;k<=10;k++){
+        r1[k].tA=r0Winners[k-1]||null;
+        r1[k].tB=r0Winners[20-k]||null;
+      }
+    }
+  }
+
+  // Match teams to CSV data
+  const matches=[];
+  let unmatched=[];
+  round.forEach((m,mi)=>{
+    if(m.isBye)return;
+    if(!m.tA||!m.tB)return;
+    const keyA=m.tA.n.toLowerCase();
+    const keyB=m.tB.n.toLowerCase();
+    const dataA=lookup[keyA];
+    const dataB=lookup[keyB];
+    if(!dataA)unmatched.push(m.tA.n);
+    if(!dataB)unmatched.push(m.tB.n);
+    if(dataA&&dataB){
+      const scA={hc:String(dataA.hc),pp:String(dataA.pp),rv:String(dataA.rv),hg:String(dataA.hg)};
+      const scB={hc:String(dataB.hc),pp:String(dataB.pp),rv:String(dataB.rv),hg:String(dataB.hg)};
+      const pA=calcTotal(scA),pB=calcTotal(scB);
+      const winner=pA>pB?m.tA:pB>pA?m.tB:(+dataA.pp)>=(+dataB.pp)?m.tA:m.tB;
+      matches.push({ri,mi,key:ri+'-'+mi,scA,scB,pA,pB,winner,tA:m.tA,tB:m.tB});
+    }
+  });
+  if(unmatched.length>0){
+    msgEl.innerHTML=`<div class="import-msg error">Could not find CSV data for: ${unmatched.map(sanitize).join(', ')}</div>`;
+    return;
+  }
+  if(matches.length===0){
+    msgEl.innerHTML='<div class="import-msg error">No matchups found. Make sure the previous round is complete or CSV contains all 43 districts.</div>';
+    return;
+  }
+  pendingCSVMatches=matches;
+  // Render preview
+  let html='<div class="import-preview" style="margin-top:10px">';
+  matches.forEach(m=>{
+    const aWin=m.winner.s===m.tA.s;
+    html+=`<div class="lbr" style="font-size:12px">
+      <span style="flex:1;${aWin?'font-weight:700':'color:#888'}">#${m.tA.s} ${sanitize(m.tA.n)} (${m.pA} pts)</span>
+      <span style="margin:0 8px;color:#ccc">vs</span>
+      <span style="flex:1;text-align:right;${!aWin?'font-weight:700':'color:#888'}">#${m.tB.s} ${sanitize(m.tB.n)} (${m.pB} pts)</span>
+    </div>`;
+  });
+  html+='</div>';
+  previewEl.innerHTML=html;
+  applyBtn.style.display='inline-block';
+}
+
+async function applyCSVScores(){
+  if(!pendingCSVMatches||pendingCSVMatches.length===0)return;
+  if(!isAdmin()){showPasswordModal(()=>applyCSVScores());return;}
+  const msgEl=document.getElementById('csvMsg');
+  try{
+    for(const m of pendingCSVMatches){
+      const sc={A:m.scA,B:m.scB};
+      state.scores[m.key]=sc;
+      const match=state.rounds[m.ri][m.mi];
+      match.pA=m.pA;match.pB=m.pB;match.winner=m.winner;
+      const pts=Math.max(m.pA,m.pB);
+      state.totalPts[m.winner.s]=(state.totalPts[m.winner.s]||0)+pts;
+      await apiPost('/api/advance',{matchId:m.key,scores:sc,winnerSeed:m.winner.s,points:pts});
+    }
+    syncAllRounds();refreshUI();
+    pendingCSVMatches=null;
+    document.getElementById('csvPreview').innerHTML='';
+    document.getElementById('csvApplyBtn').style.display='none';
+    document.getElementById('csvPaste').value='';
+    msgEl.innerHTML='<div class="import-msg success">All scores applied and winners advanced!</div>';
+  }catch(err){
+    msgEl.innerHTML=`<div class="import-msg error">Error: ${sanitize(err.message)}</div>`;
+  }
+}
+
 const ROUND_LABELS=['Round of 43','Round of 32','Round of 11','Elite 6','Final 3','Championship'];
 const LB_ROUND_LABELS=['LB Round 1','LB Round 2','LB Round 3','LB Semis','LB Final'];
 const ROUND_DAYS=[4,4,4,3,2,1];
@@ -491,10 +660,10 @@ const state={rounds:buildBracket(),lbRounds:buildLosersBracket(),scores:{},total
 
 function syncAllRounds(){
   const r0=state.rounds[0],r1=state.rounds[1];
-  r1[0].tA=byeTeam;r1[0].tB=r0[0].winner||null;
+  r1[0].tA=byeTeam;r1[0].tB=r0[20].winner||null;
   for(let k=1;k<=10;k++){
-    r1[k].tA=r0[2*k-1]?(r0[2*k-1].winner||null):null;
-    r1[k].tB=r0[2*k]?(r0[2*k].winner||null):null;
+    r1[k].tA=r0[k-1]?(r0[k-1].winner||null):null;
+    r1[k].tB=r0[20-k]?(r0[20-k].winner||null):null;
   }
   for(let ri=2;ri<state.rounds.length;ri++){
     const prev=state.rounds[ri-1],cur=state.rounds[ri];
