@@ -82,48 +82,38 @@ function parseAndPreviewCSV(): void {
     return
   }
 
-  // If Round of 32 and previous round not complete, score Round of 43 from CSV
+  // Round of 32: always score Round of 43 from CSV (even on re-upload)
   if (ri === 1) {
     const r0 = store.rounds[0]
-    const r1 = store.rounds[1]
-    const needsDerive = r1.filter(m => !m.isBye).some(m => !m.tA || !m.tB)
-    if (needsDerive) {
-      const matches: PendingMatch[] = []
-      const unmatched: string[] = []
-      for (let i = 0; i < 21; i++) {
-        const tA = r0[i].tA
-        const tB = r0[i].tB
-        if (!tA || !tB) { continue }
-        const dA = lookup[tA.n.toLowerCase()]
-        const dB = lookup[tB.n.toLowerCase()]
-        if (!dA) { unmatched.push(tA.n) }
-        if (!dB) { unmatched.push(tB.n) }
-        if (!dA || !dB) { continue }
-        const scA: ScoreMetrics = { hc: String(dA.hc), pp: String(dA.pp), rv: String(dA.rv), hg: String(dA.hg) }
-        const scB: ScoreMetrics = { hc: String(dB.hc), pp: String(dB.pp), rv: String(dB.rv), hg: String(dB.hg) }
-        const pA = calcTotal(scA)
-        const pB = calcTotal(scB)
-        const w = pA > pB ? tA : pB > pA ? tB : (+dA.pp) >= (+dB.pp) ? tA : tB
-        const l = w.s === tA.s ? tB : tA
-        r0[i].winner = w
-        r0[i].pA = pA
-        r0[i].pB = pB
-        matches.push({ ri: 0, mi: i, key: `0-${i}`, scA, scB, pA, pB, winner: w, loser: l, tA, tB })
-      }
-      // Populate Round of 32 teams from Round of 43 winners
-      r1[0].tA = store.byeTeam
-      r1[0].tB = r0[0].winner || null
-      for (let k = 1; k <= 10; k++) {
-        r1[k].tA = r0[2 * k - 1] ? (r0[2 * k - 1].winner || null) : null
-        r1[k].tB = r0[2 * k] ? (r0[2 * k].winner || null) : null
-      }
-      if (unmatched.length > 0) {
-        csvMsg.value = { type: 'error', text: `Could not find CSV data for: ${unmatched.join(', ')}` }
-        return
-      }
-      pendingMatches.value = matches
+    const matches: PendingMatch[] = []
+    const unmatched: string[] = []
+    for (let i = 0; i < 21; i++) {
+      const tA = r0[i].tA
+      const tB = r0[i].tB
+      if (!tA || !tB) { continue }
+      const dA = lookup[tA.n.toLowerCase()]
+      const dB = lookup[tB.n.toLowerCase()]
+      if (!dA) { unmatched.push(tA.n) }
+      if (!dB) { unmatched.push(tB.n) }
+      if (!dA || !dB) { continue }
+      const scA: ScoreMetrics = { hc: String(dA.hc), pp: String(dA.pp), rv: String(dA.rv), hg: String(dA.hg) }
+      const scB: ScoreMetrics = { hc: String(dB.hc), pp: String(dB.pp), rv: String(dB.rv), hg: String(dB.hg) }
+      const pA = calcTotal(scA)
+      const pB = calcTotal(scB)
+      const w = pA > pB ? tA : pB > pA ? tB : (+dA.pp) >= (+dB.pp) ? tA : tB
+      const l = w.s === tA.s ? tB : tA
+      r0[i].winner = w
+      r0[i].pA = pA
+      r0[i].pB = pB
+      matches.push({ ri: 0, mi: i, key: `0-${i}`, scA, scB, pA, pB, winner: w, loser: l, tA, tB })
+    }
+    store.syncAll()
+    if (unmatched.length > 0) {
+      csvMsg.value = { type: 'error', text: `Could not find CSV data for: ${unmatched.join(', ')}` }
       return
     }
+    pendingMatches.value = matches
+    return
   }
 
   const matches: PendingMatch[] = []
@@ -190,6 +180,11 @@ async function applyCSVScores(): Promise<void> {
 const roundOptions = ROUND_LABELS.slice(1).map((label, i) => ({ value: i + 1, label }))
 
 const winnerCount = computed(() => pendingMatches.value?.length ?? 0)
+const isReupload = computed(() => {
+  if (!pendingMatches.value || pendingMatches.value.length === 0) return false
+  const ri = pendingMatches.value[0].ri
+  return store.rounds[ri].some(m => m.winner !== null)
+})
 </script>
 
 <template>
@@ -251,7 +246,7 @@ const winnerCount = computed(() => pendingMatches.value?.length ?? 0)
         <div class="apply-section">
           <p class="apply-note">This will update the bracket and cannot be easily undone.</p>
           <button class="apply-btn" @click="applyCSVScores">
-            Apply Scores &amp; Advance {{ winnerCount }} Winners
+            {{ isReupload ? 'Update Scores for This Round' : `Apply Scores &amp; Advance ${winnerCount} Winners` }}
           </button>
         </div>
       </div>

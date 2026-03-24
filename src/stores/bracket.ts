@@ -122,23 +122,40 @@ export const useBracketStore = defineStore('bracket', () => {
     return [lb0, lb1, lb2, lb3, lb4]
   }
 
-  function syncAllRounds(): void {
-    const r0 = rounds.value[0]
-    const r1 = rounds.value[1]
+  function seedPairRound(qualifiers: Team[], curRound: Match[]): void {
+    const sorted = [...qualifiers].sort((a, b) => a.s - b.s)
+    const nonBye = curRound.filter(m => !m.isBye)
+    const byeMatch = curRound.find(m => m.isBye)
 
-    // Bye match: seed #1 vs r0[0] winner
-    r1[0].tA = byeTeam.value
-    r1[0].tB = r0[0].winner || null
-
-    // Sequential pairing: adjacent r0 matches feed into each r1 match
-    for (let k = 1; k <= 10; k++) {
-      r1[k].tA = r0[2 * k - 1] ? (r0[2 * k - 1].winner || null) : null
-      r1[k].tB = r0[2 * k] ? (r0[2 * k].winner || null) : null
+    let pairTeams = sorted
+    if (byeMatch) {
+      // Top seed gets the bye
+      byeMatch.tA = sorted[0] || null
+      byeMatch.tB = null
+      if (byeMatch.tA && !byeMatch.winner) { byeMatch.winner = byeMatch.tA }
+      pairTeams = sorted.slice(1)
     }
 
+    for (let i = 0; i < nonBye.length; i++) {
+      const prevA = nonBye[i].tA?.s
+      const prevB = nonBye[i].tB?.s
+      nonBye[i].tA = pairTeams[i] || null
+      nonBye[i].tB = pairTeams[pairTeams.length - 1 - i] || null
+      if (nonBye[i].tA?.s !== prevA || nonBye[i].tB?.s !== prevB) { nonBye[i].winner = null }
+    }
+  }
+
+  function syncAllRounds(): void {
+    // Collect Round of 43 winners + bye team
+    const r0Qualifiers: Team[] = [byeTeam.value]
+    rounds.value[0].forEach(m => { if (m.winner) r0Qualifiers.push(m.winner) })
+    seedPairRound(r0Qualifiers, rounds.value[1])
+
+    // Each subsequent round: re-seed from previous round winners
     for (let ri = 2; ri < rounds.value.length; ri++) {
-      const winners = rounds.value[ri - 1].map(m => m.winner || null)
-      propagateRound(rounds.value[ri], winners)
+      const qualifiers: Team[] = []
+      rounds.value[ri - 1].forEach(m => { if (m.winner) qualifiers.push(m.winner) })
+      seedPairRound(qualifiers, rounds.value[ri])
     }
   }
 
