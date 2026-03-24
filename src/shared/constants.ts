@@ -22,6 +22,7 @@ export const LB_ROUND_SHORT_LABELS = ['LB1', 'LB2', 'LB3', 'LB SF', 'LB F']
 
 export const WB_ACCENT = '#FA8D29'
 export const LB_ACCENT = '#E25353'
+export const WB_TEAL = '#007573'
 
 export const ROUND_DAYS = [4, 4, 4, 3, 2, 1]
 

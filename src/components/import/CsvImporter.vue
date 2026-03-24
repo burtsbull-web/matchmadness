@@ -6,6 +6,7 @@ import { ROUND_LABELS } from '@/shared/constants'
 import { postAdvance } from '@/api/client'
 import { useBracketStore } from '@/stores/bracket'
 import { useAuthStore } from '@/stores/auth'
+import SubTabs from '@/components/SubTabs.vue'
 
 const store = useBracketStore()
 const auth = useAuthStore()
@@ -77,6 +78,7 @@ interface PendingMatch {
   pA: number
   pB: number
   winner: Team
+  loser: Team
   tA: Team
   tB: Team
 }
@@ -185,7 +187,8 @@ function parseAndPreviewCSV(): void {
       const pA = calcTotal(scA)
       const pB = calcTotal(scB)
       const winner = pA > pB ? m.tA : pB > pA ? m.tB : (+dataA.pp) >= (+dataB.pp) ? m.tA : m.tB
-      matches.push({ ri, mi, key: `${ri}-${mi}`, scA, scB, pA, pB, winner: winner!, tA: m.tA, tB: m.tB })
+      const loser = winner!.s === m.tA.s ? m.tB : m.tA
+      matches.push({ ri, mi, key: `${ri}-${mi}`, scA, scB, pA, pB, winner: winner!, loser: loser!, tA: m.tA, tB: m.tB })
     }
   })
 
@@ -228,91 +231,123 @@ async function applyCSVScores(): Promise<void> {
 }
 
 const roundOptions = ROUND_LABELS.slice(1).map((label, i) => ({ value: i + 1, label }))
+
+const subTab = ref('rounds')
+
+const importTabs = [
+  { key: 'rounds', label: 'Import Round Scores' },
+  { key: 'teams', label: 'Import Teams' },
+]
+
+const winnerCount = computed(() => pendingMatches.value?.length ?? 0)
 </script>
 
 <template>
   <div class="import-container">
-    <!-- Team Import -->
-    <h3 class="section-title">Import Teams from CSV</h3>
-    <p class="section-desc">
-      Paste CSV with columns: Name, District. Teams will be seeded 1-43 in row order.
-    </p>
-    <textarea
-      v-model="teamCsvPaste"
-      rows="6"
-      class="csv-input"
-      placeholder="Paste CSV here (include header row)..."
-    ></textarea>
-    <div class="actions">
-      <button class="btn-outline" @click="parseTeamCSV">Preview</button>
-    </div>
+    <SubTabs
+      :tabs="importTabs"
+      :active="subTab"
+      @select="subTab = $event"
+    />
 
-    <div v-if="pendingTeams" class="preview-box">
-      <div class="preview-header">{{ pendingTeams.length }} teams found</div>
-      <div class="preview-list">
-        <div v-for="t in pendingTeams" :key="t.s" class="preview-row">
-          <span class="seed">#{{ t.s }}</span>
-          <span class="team-name">{{ t.n }}</span>
-          <span class="dm">{{ t.dm }}</span>
+    <div v-if="subTab === 'rounds'">
+      <p class="section-desc">
+        Paste CSV with columns: DISTRICT, GROSS REV %, NET HSI%, POST CONV, HSI.
+        Click <strong>Preview</strong> to see results, then <strong>Apply</strong> to update the bracket.
+      </p>
+
+      <div class="round-select">
+        <label>Target Round:</label>
+        <select v-model="csvRound">
+          <option v-for="opt in roundOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
+      </div>
+
+      <textarea
+        v-model="csvPaste"
+        rows="8"
+        class="csv-input"
+        placeholder="Paste CSV here (include header row)..."
+      ></textarea>
+
+      <div class="actions">
+        <button class="btn-outline" @click="parseAndPreviewCSV">Preview Results</button>
+      </div>
+
+      <div v-if="pendingMatches" class="results-container">
+        <div class="results-banner">
+          <div class="banner-icon">&#9998;</div>
+          <div>
+            <strong>{{ winnerCount }} matches ready to apply</strong>
+            <div class="banner-sub">
+              {{ winnerCount }} winners advance &middot; {{ winnerCount }} losers move to Loser's Bracket
+            </div>
+          </div>
+        </div>
+
+        <div class="results-section">
+          <div class="results-label winners-label">Winners (advancing)</div>
+          <div v-for="m in pendingMatches" :key="'w-' + m.key" class="result-row winner-row">
+            <span class="result-seed">#{{ m.winner.s }}</span>
+            <span class="result-name">{{ m.winner.n }}</span>
+            <span class="result-pts winner-pts">{{ Math.max(m.pA, m.pB) }} pts</span>
+          </div>
+        </div>
+
+        <div class="results-section">
+          <div class="results-label losers-label">Losers (to Loser's Bracket)</div>
+          <div v-for="m in pendingMatches" :key="'l-' + m.key" class="result-row loser-row">
+            <span class="result-seed">#{{ m.loser.s }}</span>
+            <span class="result-name">{{ m.loser.n }}</span>
+            <span class="result-pts loser-pts">{{ Math.min(m.pA, m.pB) }} pts</span>
+          </div>
+        </div>
+
+        <div class="apply-section">
+          <p class="apply-note">This will update the bracket and cannot be easily undone.</p>
+          <button class="apply-btn" @click="applyCSVScores">
+            Apply Scores &amp; Advance {{ winnerCount }} Winners
+          </button>
         </div>
       </div>
+
+      <div v-if="csvMsg" class="msg" :class="csvMsg.type">{{ csvMsg.text }}</div>
+    </div>
+
+    <div v-if="subTab === 'teams'">
+      <p class="section-desc">
+        Paste CSV with columns: Name, District. Teams will be seeded 1-43 in row order.
+        This resets the entire bracket.
+      </p>
+      <textarea
+        v-model="teamCsvPaste"
+        rows="6"
+        class="csv-input"
+        placeholder="Paste CSV here (include header row)..."
+      ></textarea>
       <div class="actions">
-        <button class="btn-outline" @click="cancelTeamImport">Cancel</button>
-        <button class="adv-btn" @click="confirmTeamImport">Save &amp; Apply to Bracket</button>
+        <button class="btn-outline" @click="parseTeamCSV">Preview</button>
       </div>
-    </div>
 
-    <div v-if="teamMsg" class="msg" :class="teamMsg.type">{{ teamMsg.text }}</div>
-
-    <hr class="divider" />
-
-    <!-- Round Score Import -->
-    <h3 class="section-title">Import Round Scores from CSV</h3>
-    <p class="section-desc">
-      Paste CSV data with columns: DISTRICT, GROSS REV %, NET HSI%, POST CONV, HSI.
-      Matches districts to the selected round's matchups, calculates scores, and advances winners.
-    </p>
-
-    <div class="round-select">
-      <label>Target Round:</label>
-      <select v-model="csvRound">
-        <option v-for="opt in roundOptions" :key="opt.value" :value="opt.value">
-          {{ opt.label }}
-        </option>
-      </select>
-    </div>
-
-    <textarea
-      v-model="csvPaste"
-      rows="8"
-      class="csv-input"
-      placeholder="Paste CSV here (include header row)..."
-    ></textarea>
-
-    <div v-if="pendingMatches" class="preview-box">
-      <div v-for="m in pendingMatches" :key="m.key" class="match-preview">
-        <span :class="{ bold: m.winner.s === m.tA.s, dim: m.winner.s !== m.tA.s }">
-          #{{ m.tA.s }} {{ m.tA.n }} ({{ m.pA }} pts)
-        </span>
-        <span class="vs">vs</span>
-        <span :class="{ bold: m.winner.s === m.tB.s, dim: m.winner.s !== m.tB.s }">
-          #{{ m.tB.s }} {{ m.tB.n }} ({{ m.pB }} pts)
-        </span>
+      <div v-if="pendingTeams" class="preview-box">
+        <div class="preview-header">{{ pendingTeams.length }} teams found</div>
+        <div class="preview-list">
+          <div v-for="t in pendingTeams" :key="t.s" class="preview-row">
+            <span class="seed">#{{ t.s }}</span>
+            <span class="team-name">{{ t.n }}</span>
+            <span class="dm">{{ t.dm }}</span>
+          </div>
+        </div>
+        <div class="actions" style="padding: 10px">
+          <button class="btn-outline" @click="cancelTeamImport">Cancel</button>
+          <button class="adv-btn" @click="confirmTeamImport">Save &amp; Apply to Bracket</button>
+        </div>
       </div>
-    </div>
 
-    <div class="actions">
-      <button class="btn-outline" @click="parseAndPreviewCSV">Preview</button>
-      <button
-        v-if="pendingMatches"
-        class="adv-btn"
-        @click="applyCSVScores"
-      >
-        Apply Scores &amp; Advance Winners
-      </button>
+      <div v-if="teamMsg" class="msg" :class="teamMsg.type">{{ teamMsg.text }}</div>
     </div>
-
-    <div v-if="csvMsg" class="msg" :class="csvMsg.type">{{ csvMsg.text }}</div>
   </div>
 </template>
 
@@ -322,15 +357,11 @@ const roundOptions = ROUND_LABELS.slice(1).map((label, i) => ({ value: i + 1, la
   margin: 0 auto;
 }
 
-.section-title {
-  font-size: 14px;
-  margin-bottom: 8px;
-}
-
 .section-desc {
   font-size: 12px;
   color: #888;
   margin-bottom: 1rem;
+  line-height: 1.5;
 }
 
 .csv-input {
@@ -364,11 +395,11 @@ const roundOptions = ROUND_LABELS.slice(1).map((label, i) => ({ value: i + 1, la
   display: flex;
   gap: 8px;
   justify-content: center;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .btn-outline {
-  padding: 6px 16px;
+  padding: 8px 20px;
   border: 1px solid #ccc;
   border-radius: 6px;
   background: #fff;
@@ -377,7 +408,7 @@ const roundOptions = ROUND_LABELS.slice(1).map((label, i) => ({ value: i + 1, la
 }
 
 .adv-btn {
-  padding: 5px 13px;
+  padding: 8px 16px;
   background: #FA8D29;
   color: #fff;
   border: none;
@@ -386,6 +417,121 @@ const roundOptions = ROUND_LABELS.slice(1).map((label, i) => ({ value: i + 1, la
   cursor: pointer;
   font-weight: 500;
 }
+
+.results-container {
+  margin-top: 1rem;
+}
+
+.results-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #FFF8F0;
+  border: 1px solid #FA8D2940;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+}
+
+.banner-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.results-banner strong {
+  font-size: 14px;
+  color: #1a1a1a;
+}
+
+.banner-sub {
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.results-section {
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.results-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 14px;
+  border-bottom: 1px solid #eee;
+}
+
+.winners-label {
+  color: #007573;
+  background: #00757310;
+}
+
+.losers-label {
+  color: #E25353;
+  background: #E2535310;
+}
+
+.result-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.result-row:last-child { border-bottom: none; }
+
+.result-seed {
+  font-size: 11px;
+  color: #aaa;
+  min-width: 24px;
+  font-weight: 500;
+}
+
+.result-name { flex: 1; }
+
+.result-pts {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.winner-pts { color: #007573; }
+.loser-pts { color: #E25353; }
+
+.winner-row .result-name { font-weight: 500; }
+.loser-row { opacity: 0.7; }
+
+.apply-section {
+  text-align: center;
+  margin-top: 16px;
+  padding-top: 12px;
+}
+
+.apply-note {
+  font-size: 11px;
+  color: #999;
+  margin-bottom: 10px;
+}
+
+.apply-btn {
+  padding: 12px 28px;
+  background: #FA8D29;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.apply-btn:hover { background: #e07a1a; }
 
 .preview-box {
   background: #fff;
@@ -427,25 +573,6 @@ const roundOptions = ROUND_LABELS.slice(1).map((label, i) => ({ value: i + 1, la
 
 .team-name { flex: 1; }
 .dm { font-size: 11px; color: #888; }
-
-.match-preview {
-  display: flex;
-  align-items: center;
-  padding: 6px 14px;
-  border-bottom: 0.5px solid #eee;
-  font-size: 12px;
-}
-
-.match-preview:last-child { border-bottom: none; }
-.match-preview .vs { margin: 0 8px; color: #ccc; }
-.bold { font-weight: 700; }
-.dim { color: #888; }
-
-.divider {
-  margin: 2rem 0;
-  border: none;
-  border-top: 1px solid #eee;
-}
 
 .msg {
   font-size: 12px;

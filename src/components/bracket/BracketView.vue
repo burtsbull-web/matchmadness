@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { useBracketStore } from '@/stores/bracket'
 import { useAuthStore } from '@/stores/auth'
 import { useIsMobile } from '@/composables/useIsMobile'
+import { WB_TEAL, LB_ACCENT } from '@/shared/constants'
+import SubTabs from '@/components/SubTabs.vue'
 import SvgBracket from './SvgBracket.vue'
 import MobileBracket from './MobileBracket.vue'
 
@@ -10,31 +12,30 @@ const store = useBracketStore()
 const auth = useAuthStore()
 const isMobile = useIsMobile()
 
-const showMobile = computed(() => isMobile.value && !auth.isAdmin)
+const showMobile = computed(() => isMobile.value)
 
-function showView(type: 'wb' | 'lb'): void {
-  store.activeBracketView = type
+const bracketTabs = [
+  { key: 'wb', label: "Winner's Bracket" },
+  { key: 'lb', label: "Loser's Bracket" },
+]
+
+const activeAccent = computed(() =>
+  store.activeBracketView === 'lb' ? LB_ACCENT : WB_TEAL,
+)
+
+function onSelect(key: string): void {
+  store.activeBracketView = key as 'wb' | 'lb'
 }
 </script>
 
 <template>
   <div>
-    <div class="toggle-row">
-      <button
-        class="bracket-toggle"
-        :class="{ active: store.activeBracketView === 'wb', wb: store.activeBracketView === 'wb' }"
-        @click="showView('wb')"
-      >
-        Winner's Bracket
-      </button>
-      <button
-        class="bracket-toggle"
-        :class="{ active: store.activeBracketView === 'lb', lb: store.activeBracketView === 'lb' }"
-        @click="showView('lb')"
-      >
-        Loser's Bracket
-      </button>
-    </div>
+    <SubTabs
+      :tabs="bracketTabs"
+      :active="store.activeBracketView"
+      :accent="activeAccent"
+      @select="onSelect"
+    />
 
     <p v-if="store.activeBracketView === 'lb'" class="lb-subtitle">
       First-round losers get a second chance
@@ -50,36 +51,6 @@ function showView(type: 'wb' | 'lb'): void {
 </template>
 
 <style scoped>
-.toggle-row {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  margin-bottom: 12px;
-}
-
-.bracket-toggle {
-  padding: 7px 18px;
-  border: 0.5px solid #ccc;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 12px;
-  background: transparent;
-  color: #555;
-  font-weight: 500;
-}
-
-.bracket-toggle.active.wb {
-  background: #007573;
-  color: #fff;
-  border-color: #007573;
-}
-
-.bracket-toggle.active.lb {
-  background: #E25353;
-  color: #fff;
-  border-color: #E25353;
-}
-
 .lb-subtitle {
   font-size: 11px;
   color: #888;

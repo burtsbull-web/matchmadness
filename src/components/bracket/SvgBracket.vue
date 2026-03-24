@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Match, Side } from '@/shared/types'
-import { SLOT_H, SLOT_W, COL_GAP, PAD_TOP, PAD_LEFT, MATCH_GAP, ROUND_LABELS, LB_ROUND_LABELS, getRoundDates } from '@/shared/constants'
+import { SLOT_H, SLOT_W, COL_GAP, PAD_TOP, PAD_LEFT, MATCH_GAP, ROUND_LABELS, LB_ROUND_LABELS, WB_ACCENT, LB_ACCENT, getRoundDates } from '@/shared/constants'
 import { useBracketStore } from '@/stores/bracket'
 import { useAuthStore } from '@/stores/auth'
 import SvgSlot from './SvgSlot.vue'
@@ -18,7 +18,7 @@ const rounds = computed(() => props.isLB ? store.lbRounds : store.rounds)
 
 const hoveredSeed = computed(() => props.isLB ? store.lbHoveredSeed : store.hoveredSeed)
 const labels = computed(() => props.isLB ? LB_ROUND_LABELS : ROUND_LABELS)
-const accent = computed(() => props.isLB ? '#E25353' : '#FA8D29')
+const accent = computed(() => props.isLB ? LB_ACCENT : WB_ACCENT)
 const cachedDates = getRoundDates()
 const dates = computed(() => props.isLB ? cachedDates.slice(1) : cachedDates)
 
@@ -138,7 +138,6 @@ function handleUndo(ri: number, mi: number): void {
       :viewBox="`0 0 ${layout.totalW} ${layout.totalH}`"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <!-- Connectors -->
       <g>
         <SvgConnector
           v-for="conn in connectors"
@@ -149,7 +148,6 @@ function handleUndo(ri: number, mi: number): void {
         />
       </g>
 
-      <!-- Round labels -->
       <template v-for="(label, ri) in labels" :key="'label-' + ri">
         <text
           :x="PAD_LEFT + ri * (SLOT_W + COL_GAP) + SLOT_W / 2"
@@ -169,10 +167,8 @@ function handleUndo(ri: number, mi: number): void {
         >{{ dates[ri].s }}&ndash;{{ dates[ri].e }}</text>
       </template>
 
-      <!-- Matches -->
       <template v-for="(round, ri) in rounds" :key="'r-' + ri">
         <template v-for="(match, mi) in round" :key="match.id">
-          <!-- Slot A -->
           <SvgSlot
             side="A"
             :match="match"
@@ -184,9 +180,9 @@ function handleUndo(ri: number, mi: number): void {
             :is-admin="auth.isAdmin"
             @hover="setHover"
             @click-slot="handleSlotClick(ri, mi, $event)"
+            @undo="handleUndo(ri, mi)"
           />
 
-          <!-- Slot B -->
           <SvgSlot
             v-if="!match.isBye"
             side="B"
@@ -199,36 +195,9 @@ function handleUndo(ri: number, mi: number): void {
             :is-admin="auth.isAdmin"
             @hover="setHover"
             @click-slot="handleSlotClick(ri, mi, $event)"
+            @undo="handleUndo(ri, mi)"
           />
 
-          <!-- Undo button -->
-          <g v-if="auth.isAdmin && match.winner && !match.isBye" style="cursor: pointer">
-            <rect
-              :x="layout.positions[ri][mi].x + SLOT_W - 30"
-              :y="layout.positions[ri][mi].y - 3"
-              width="28"
-              height="6"
-              rx="3"
-              fill="#E25353"
-            />
-            <text
-              :x="layout.positions[ri][mi].x + SLOT_W - 16"
-              :y="layout.positions[ri][mi].y + 0.5"
-              font-size="7"
-              text-anchor="middle"
-              fill="#fff"
-              font-weight="500"
-            >UNDO</text>
-            <rect
-              :x="layout.positions[ri][mi].x + SLOT_W - 32"
-              :y="layout.positions[ri][mi].y - 7"
-              width="32"
-              height="14"
-              fill="transparent"
-              cursor="pointer"
-              @click.stop="handleUndo(ri, mi)"
-            />
-          </g>
         </template>
       </template>
     </svg>

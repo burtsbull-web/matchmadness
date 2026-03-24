@@ -61,7 +61,6 @@ const completedCount = computed(() =>
 
 <template>
   <div class="mobile-bracket">
-    <!-- Round pills -->
     <div class="round-pills">
       <button
         v-for="(label, ri) in labels"
@@ -75,7 +74,6 @@ const completedCount = computed(() =>
       </button>
     </div>
 
-    <!-- Round info -->
     <div class="round-info">
       <div class="round-title">{{ labels[selectedRound] }}</div>
       <div v-if="dates[selectedRound]" class="round-dates">
@@ -86,7 +84,6 @@ const completedCount = computed(() =>
       </div>
     </div>
 
-    <!-- Match cards -->
     <div v-if="currentMatches.length === 0" class="empty">
       No matchups in this round yet.
     </div>

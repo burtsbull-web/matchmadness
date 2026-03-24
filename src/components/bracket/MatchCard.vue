@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import type { Match } from '@/shared/types'
 import { WB_ACCENT, LB_ACCENT } from '@/shared/constants'
+import { useAuthStore } from '@/stores/auth'
+import { useBracketStore } from '@/stores/bracket'
 
 const props = defineProps<{
   match: Match
@@ -9,17 +11,23 @@ const props = defineProps<{
   nextMatch?: Match | null
 }>()
 
+const auth = useAuthStore()
+const store = useBracketStore()
+
 const accent = computed(() => props.isLB ? LB_ACCENT : WB_ACCENT)
-
 const hasResult = computed(() => !!props.match.winner)
-
 const winnerSeed = computed(() => props.match.winner?.s ?? null)
+
+function undo(): void {
+  auth.requireAdmin(() => {
+    store.undoMatch(props.match.r, props.match.i, props.isLB)
+  })
+}
 </script>
 
 <template>
   <div class="match-card-row">
     <div class="match-card" :class="{ decided: hasResult }">
-      <!-- Team A -->
       <div
         class="team-row"
         :class="{
@@ -32,7 +40,6 @@ const winnerSeed = computed(() => props.match.winner?.s ?? null)
         <span v-if="match.pA > 0" class="score" :style="{ color: accent }">{{ match.pA }}</span>
       </div>
 
-      <!-- Team B -->
       <div
         class="team-row"
         :class="{
@@ -44,9 +51,12 @@ const winnerSeed = computed(() => props.match.winner?.s ?? null)
         <span class="team-name">{{ match.tB?.n ?? 'TBD' }}</span>
         <span v-if="match.pB > 0" class="score" :style="{ color: accent }">{{ match.pB }}</span>
       </div>
+
+      <div v-if="auth.isAdmin && hasResult" class="undo-row">
+        <button class="undo-btn" @click="undo">Undo Result</button>
+      </div>
     </div>
 
-    <!-- Next round peek -->
     <div v-if="nextMatch" class="peek">
       <div class="peek-connector"></div>
       <div class="peek-card">
@@ -89,7 +99,7 @@ const winnerSeed = computed(() => props.match.winner?.s ?? null)
   transition: background 0.15s;
 }
 
-.team-row:last-child {
+.team-row:last-child:not(:has(+ .undo-row)) {
   border-bottom: none;
 }
 
@@ -129,7 +139,29 @@ const winnerSeed = computed(() => props.match.winner?.s ?? null)
   text-align: right;
 }
 
-/* Next-round peek */
+.undo-row {
+  padding: 8px 14px;
+  border-top: 1px solid #f0f0f0;
+  text-align: right;
+}
+
+.undo-btn {
+  padding: 6px 16px;
+  background: none;
+  border: 1.5px solid #E25353;
+  border-radius: 6px;
+  color: #E25353;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+
+.undo-btn:active {
+  background: #E2535310;
+}
+
 .peek {
   display: flex;
   align-items: center;

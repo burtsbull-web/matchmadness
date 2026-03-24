@@ -8,4 +8,4 @@ run_worker_first = ["/api/*"]
 
 [[kv_namespaces]]
 binding = "BRACKET_KV"
-id = "fdd8168fa5704cbcb3d59eb4e8c5d2e8"
+id = "6d28c282ed374b8c889b8030d7651449"

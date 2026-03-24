@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Match, Side } from '@/shared/types'
-import { SLOT_W, SLOT_H } from '@/shared/constants'
+import { SLOT_W, SLOT_H, WB_ACCENT, LB_ACCENT } from '@/shared/constants'
 
 const props = defineProps<{
   match: Match
@@ -17,6 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   hover: [seed: number | null]
   clickSlot: [side: Side]
+  undo: []
 }>()
 
 const team = computed(() => props.side === 'A' ? props.match.tA : props.match.tB)
@@ -24,7 +25,9 @@ const isWinner = computed(() => team.value && props.match.winner && props.match.
 const canClick = computed(() => !props.match.isBye && props.match.tA && props.match.tB)
 const isHovered = computed(() => team.value && props.pathSeeds.has(team.value.s) && props.hoveredSeed !== null)
 const isMain = computed(() => team.value && team.value.s === props.hoveredSeed)
-const accent = computed(() => props.isLB ? '#E25353' : '#FA8D29')
+const accent = computed(() => props.isLB ? LB_ACCENT : WB_ACCENT)
+const showUndo = computed(() => props.isAdmin && !!isWinner.value && !props.match.isBye)
+const ptsX = computed(() => showUndo.value ? props.x + SLOT_W - 22 : props.x + SLOT_W - 4)
 
 const fill = computed(() => {
   if (isMain.value) { return accent.value }
@@ -94,7 +97,6 @@ function onClick(): void {
       :stroke-width="strokeWidth"
     />
 
-    <!-- TBD -->
     <text
       v-if="!team"
       :x="x + 6"
@@ -103,7 +105,6 @@ function onClick(): void {
       fill="#bbb"
     >TBD</text>
 
-    <!-- Team content -->
     <template v-if="team">
       <text
         :x="x + 5"
@@ -123,14 +124,13 @@ function onClick(): void {
 
       <text
         v-if="pts > 0"
-        :x="x + SLOT_W - 4"
+        :x="ptsX"
         :y="y + SLOT_H / 2 + 4"
         font-size="9.5"
         :fill="ptsColor"
         text-anchor="end"
       >{{ pts }}</text>
 
-      <!-- BYE badge -->
       <template v-if="match.isBye">
         <rect
           :x="x + SLOT_W - 26"
@@ -151,7 +151,6 @@ function onClick(): void {
       </template>
     </template>
 
-    <!-- Hit area -->
     <rect
       :x="x"
       :y="y"
@@ -164,5 +163,30 @@ function onClick(): void {
       @mouseleave="onLeave"
       @click="onClick"
     />
+
+    <template v-if="showUndo">
+      <circle
+        :cx="x + SLOT_W - 11"
+        :cy="y + SLOT_H / 2"
+        r="7"
+        fill="#E25353"
+      />
+      <text
+        :x="x + SLOT_W - 11"
+        :y="y + SLOT_H / 2 + 3.5"
+        font-size="9"
+        text-anchor="middle"
+        fill="#fff"
+      >&#x21BA;</text>
+      <rect
+        :x="x + SLOT_W - 20"
+        :y="y + 1"
+        width="20"
+        :height="SLOT_H - 2"
+        fill="transparent"
+        cursor="pointer"
+        @click.stop="emit('undo')"
+      />
+    </template>
   </g>
 </template>

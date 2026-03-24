@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { TabName } from '@/shared/types'
 import { useAuthStore } from '@/stores/auth'
 import { useBracketStore } from '@/stores/bracket'
 import { TABS, selectTab as doSelectTab } from '@/shared/tabs'
@@ -6,7 +7,7 @@ import { TABS, selectTab as doSelectTab } from '@/shared/tabs'
 const auth = useAuthStore()
 const store = useBracketStore()
 
-function onSelect(key: string): void {
+function onSelect(key: TabName): void {
   doSelectTab(key, auth, store)
 }
 </script>

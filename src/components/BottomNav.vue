@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { TabName } from '@/shared/types'
 import { useAuthStore } from '@/stores/auth'
 import { useBracketStore } from '@/stores/bracket'
 import { TABS, selectTab as doSelectTab } from '@/shared/tabs'
@@ -12,7 +13,7 @@ const visibleTabs = computed(() => {
   return TABS.filter(t => !t.adminOnly)
 })
 
-function selectTab(key: string): void {
+function selectTab(key: TabName): void {
   doSelectTab(key, auth, store)
 }
 </script>

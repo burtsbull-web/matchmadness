@@ -19,15 +19,14 @@ export const TABS: TabDef[] = [
 ]
 
 export function selectTab(
-  key: string,
+  key: TabName,
   auth: { isAdmin: boolean; requireAdmin: (cb: () => void) => void },
   store: { activeTab: TabName },
 ): void {
-  const tab = key as TabName
-  const def = TABS.find(t => t.key === tab)
+  const def = TABS.find(t => t.key === key)
   if (def?.adminOnly && !auth.isAdmin) {
-    auth.requireAdmin(() => { store.activeTab = tab })
+    auth.requireAdmin(() => { store.activeTab = key })
     return
   }
-  store.activeTab = tab
+  store.activeTab = key
 }

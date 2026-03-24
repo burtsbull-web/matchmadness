@@ -338,6 +338,9 @@ export const useBracketStore = defineStore('bracket', () => {
       }
 
       syncAll()
+      // Force reactivity — reassign refs so Vue detects deep changes
+      rounds.value = [...rounds.value]
+      lbRounds.value = [...lbRounds.value]
     } catch {
       console.log('Running locally, no API')
     }
