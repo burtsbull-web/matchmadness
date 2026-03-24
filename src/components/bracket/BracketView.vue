@@ -1,8 +1,16 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useBracketStore } from '@/stores/bracket'
+import { useAuthStore } from '@/stores/auth'
+import { useIsMobile } from '@/composables/useIsMobile'
 import SvgBracket from './SvgBracket.vue'
+import MobileBracket from './MobileBracket.vue'
 
 const store = useBracketStore()
+const auth = useAuthStore()
+const isMobile = useIsMobile()
+
+const showMobile = computed(() => isMobile.value && !auth.isAdmin)
 
 function showView(type: 'wb' | 'lb'): void {
   store.activeBracketView = type
@@ -28,14 +36,16 @@ function showView(type: 'wb' | 'lb'): void {
       </button>
     </div>
 
-    <div v-if="store.activeBracketView === 'wb'">
-      <SvgBracket :is-l-b="false" />
-    </div>
+    <p v-if="store.activeBracketView === 'lb'" class="lb-subtitle">
+      First-round losers get a second chance
+    </p>
 
-    <div v-if="store.activeBracketView === 'lb'">
-      <p class="lb-subtitle">First-round losers get a second chance</p>
-      <SvgBracket :is-l-b="true" />
-    </div>
+    <template v-if="showMobile">
+      <MobileBracket :is-l-b="store.activeBracketView === 'lb'" />
+    </template>
+    <template v-else>
+      <SvgBracket :is-l-b="store.activeBracketView === 'lb'" />
+    </template>
   </div>
 </template>
 

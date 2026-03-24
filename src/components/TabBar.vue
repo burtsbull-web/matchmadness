@@ -1,36 +1,24 @@
 <script setup lang="ts">
-import type { TabName } from '@/shared/types'
 import { useAuthStore } from '@/stores/auth'
 import { useBracketStore } from '@/stores/bracket'
+import { TABS, selectTab as doSelectTab } from '@/shared/tabs'
 
 const auth = useAuthStore()
 const store = useBracketStore()
 
-const tabs: Array<{ key: TabName; label: string }> = [
-  { key: 'bracket', label: 'Bracket' },
-  { key: 'score', label: 'Enter Scores' },
-  { key: 'rules', label: 'Scoring Rules' },
-  { key: 'leaderboard', label: 'Leaderboard' },
-  { key: 'import', label: 'Import Teams' },
-]
-
-function selectTab(tab: TabName): void {
-  if ((tab === 'score' || tab === 'import') && !auth.isAdmin) {
-    auth.requireAdmin(() => { store.activeTab = tab })
-    return
-  }
-  store.activeTab = tab
+function onSelect(key: string): void {
+  doSelectTab(key, auth, store)
 }
 </script>
 
 <template>
   <div class="tabs">
     <button
-      v-for="tab in tabs"
+      v-for="tab in TABS"
       :key="tab.key"
       class="tab"
       :class="{ active: store.activeTab === tab.key }"
-      @click="selectTab(tab.key)"
+      @click="onSelect(tab.key)"
     >
       {{ tab.label }}
     </button>

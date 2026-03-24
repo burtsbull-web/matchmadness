@@ -17,6 +17,12 @@ export const LB_ROUND_LABELS = [
   'LB Final',
 ]
 
+export const ROUND_SHORT_LABELS = ['R43', 'R32', 'R11', 'E6', 'F3', 'Final']
+export const LB_ROUND_SHORT_LABELS = ['LB1', 'LB2', 'LB3', 'LB SF', 'LB F']
+
+export const WB_ACCENT = '#FA8D29'
+export const LB_ACCENT = '#E25353'
+
 export const ROUND_DAYS = [4, 4, 4, 3, 2, 1]
 
 export const SLOT_H = 28

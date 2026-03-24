@@ -92,4 +92,26 @@ const statusClass: Record<string, string> = {
 .s-lb { background: #FA8D2920; color: #FA8D29; }
 .s-eliminated { background: #E2535320; color: #A32D2D; }
 .s-waiting { background: #f5f5f5; color: #888; }
+
+@media (max-width: 768px) {
+  .lbr {
+    padding: 10px 12px;
+    gap: 8px;
+    font-size: 13px;
+  }
+
+  .dm {
+    display: none;
+  }
+
+  .lbpts {
+    min-width: 40px;
+  }
+
+  .lbst {
+    font-size: 10px;
+    min-width: 56px;
+    padding: 3px 6px;
+  }
+}
 </style>
