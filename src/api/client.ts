@@ -1,4 +1,4 @@
-import type { ApiState, ScoreData, Team } from '@/shared/types'
+import type { ApiState, ScoreData } from '@/shared/types'
 
 const API_BASE = location.origin
 
@@ -17,11 +17,6 @@ export async function apiPost(
   })
 }
 
-export async function apiGet<T>(endpoint: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${endpoint}`)
-  return res.json() as Promise<T>
-}
-
 export async function verifyPassword(password: string): Promise<boolean> {
   const res = await fetch(`${API_BASE}/api/verify`, {
     method: 'POST',
@@ -30,17 +25,9 @@ export async function verifyPassword(password: string): Promise<boolean> {
   return res.ok
 }
 
-export async function loadRemoteState(): Promise<{
-  teams: Team[] | null
-  state: ApiState
-}> {
-  const [teamsRes, stateRes] = await Promise.all([
-    fetch(`${API_BASE}/api/teams`),
-    fetch(`${API_BASE}/api/state`),
-  ])
-  const teamsData = await teamsRes.json() as { teams: Team[] | null }
-  const stateData = await stateRes.json() as ApiState
-  return { teams: teamsData.teams, state: stateData }
+export async function loadRemoteState(): Promise<ApiState> {
+  const res = await fetch(`${API_BASE}/api/state`)
+  return res.json() as Promise<ApiState>
 }
 
 export async function postAdvance(
@@ -53,6 +40,13 @@ export async function postAdvance(
   await apiPost('/api/advance', { matchId, winnerSeed, scores, points }, password)
 }
 
+export async function postAdvanceBatch(
+  password: string | null,
+  batch: Array<{ matchId: string; winnerSeed: number; scores?: ScoreData; points?: number }>,
+): Promise<void> {
+  await apiPost('/api/advance', { batch }, password)
+}
+
 export async function postUndo(
   password: string | null,
   matchId: string,
@@ -61,14 +55,3 @@ export async function postUndo(
   await apiPost('/api/undo', { matchId, clearMatchIds }, password)
 }
 
-export async function postTeams(
-  password: string | null,
-  teams: Team[],
-): Promise<boolean> {
-  const res = await apiPost('/api/teams', { teams }, password)
-  return res.ok
-}
-
-export async function postReset(password: string | null): Promise<void> {
-  await apiPost('/api/reset', {}, password)
-}

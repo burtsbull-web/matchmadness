@@ -25,6 +25,18 @@ async function getState(env: Env) {
   return (await env.BRACKET_KV.get('bracket-state', 'json') as typeof DEFAULT_STATE) || { ...DEFAULT_STATE }
 }
 
+function recalcTotalPts(state: typeof DEFAULT_STATE): void {
+  state.totalPts = {}
+  for (const [matchId, winnerSeed] of Object.entries(state.winners)) {
+    const sc = state.scores[matchId]
+    if (sc) {
+      const pA = calcTotal(sc.A || {})
+      const pB = calcTotal(sc.B || {})
+      state.totalPts[winnerSeed] = (state.totalPts[winnerSeed] || 0) + Math.max(pA, pB)
+    }
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
@@ -48,34 +60,35 @@ export default {
       const denied = requireAuth(request, env)
       if (denied) { return denied }
       const body = await request.json() as {
-        matchId: string
-        winnerSeed: number
+        matchId?: string
+        winnerSeed?: number
         scores?: Record<string, unknown>
         points?: number
+        batch?: Array<{ matchId: string; winnerSeed: number; scores?: Record<string, unknown>; points?: number }>
       }
       const current = await getState(env)
-      current.winners[body.matchId] = body.winnerSeed
-      if (body.scores) { current.scores[body.matchId] = body.scores }
-      if (body.points) {
-        current.totalPts[body.winnerSeed] = (current.totalPts[body.winnerSeed] || 0) + body.points
+
+      const items = body.batch || [{ matchId: body.matchId!, winnerSeed: body.winnerSeed!, scores: body.scores, points: body.points }]
+
+      // For batch updates, recalculate totalPts for affected matches to avoid double-counting
+      if (body.batch) {
+        for (const item of items) {
+          delete current.winners[item.matchId]
+          delete current.scores[item.matchId]
+        }
+        recalcTotalPts(current)
       }
+
+      for (const item of items) {
+        current.winners[item.matchId] = item.winnerSeed
+        if (item.scores) { current.scores[item.matchId] = item.scores }
+        if (item.points) {
+          current.totalPts[item.winnerSeed] = (current.totalPts[item.winnerSeed] || 0) + item.points
+        }
+      }
+
       await env.BRACKET_KV.put('bracket-state', JSON.stringify(current))
       return Response.json({ ok: true }, { headers: CORS })
-    }
-
-    if (url.pathname === '/api/teams') {
-      if (request.method === 'GET') {
-        const teams = await env.BRACKET_KV.get('teams', 'json')
-        return Response.json({ teams }, { headers: CORS })
-      }
-      if (request.method === 'POST') {
-        const denied = requireAuth(request, env)
-        if (denied) { return denied }
-        const body = await request.json() as { teams: unknown[] }
-        await env.BRACKET_KV.put('teams', JSON.stringify(body.teams))
-        await env.BRACKET_KV.put('bracket-state', JSON.stringify({ ...DEFAULT_STATE }))
-        return Response.json({ ok: true }, { headers: CORS })
-      }
     }
 
     if (url.pathname === '/api/undo' && request.method === 'POST') {
@@ -94,15 +107,7 @@ export default {
           delete current.scores[id]
         }
       }
-      current.totalPts = {}
-      for (const [matchId, winnerSeed] of Object.entries(current.winners)) {
-        const sc = current.scores[matchId]
-        if (sc) {
-          const pA = calcTotal(sc.A || {})
-          const pB = calcTotal(sc.B || {})
-          current.totalPts[winnerSeed] = (current.totalPts[winnerSeed] || 0) + Math.max(pA, pB)
-        }
-      }
+      recalcTotalPts(current)
       await env.BRACKET_KV.put('bracket-state', JSON.stringify(current))
       return Response.json({ ok: true }, { headers: CORS })
     }

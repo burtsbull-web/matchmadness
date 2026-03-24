@@ -1,72 +1,14 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { Team, ScoreMetrics } from '@/shared/types'
+import type { ScoreMetrics } from '@/shared/types'
 import { calcTotal } from '@/shared/scoring'
 import { ROUND_LABELS } from '@/shared/constants'
-import { postAdvance } from '@/api/client'
+import { postAdvanceBatch } from '@/api/client'
 import { useBracketStore } from '@/stores/bracket'
 import { useAuthStore } from '@/stores/auth'
-import SubTabs from '@/components/SubTabs.vue'
 
 const store = useBracketStore()
 const auth = useAuthStore()
-
-// --- Team Import (CSV) ---
-const teamCsvPaste = ref('')
-const pendingTeams = ref<Team[] | null>(null)
-const teamMsg = ref<{ type: 'success' | 'error'; text: string } | null>(null)
-
-function parseTeamCSV(): void {
-  teamMsg.value = null
-  pendingTeams.value = null
-  const csv = teamCsvPaste.value.trim()
-  if (!csv) {
-    teamMsg.value = { type: 'error', text: 'No CSV data pasted.' }
-    return
-  }
-
-  const lines = csv.split('\n').map(l => l.trim()).filter(l => l)
-  if (lines.length < 2) {
-    teamMsg.value = { type: 'error', text: 'CSV needs a header row and at least one data row.' }
-    return
-  }
-
-  const teams: Team[] = []
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(',')
-    if (cols.length < 2) { continue }
-    const dm = cols[0].trim()
-    const n = cols[1].trim()
-    if (!dm || !n) { continue }
-    teams.push({ s: teams.length + 1, dm, n })
-  }
-
-  if (teams.length === 0) {
-    teamMsg.value = { type: 'error', text: 'No teams found. Check CSV format: Name,District per row.' }
-    return
-  }
-
-  pendingTeams.value = teams
-}
-
-async function confirmTeamImport(): Promise<void> {
-  if (!pendingTeams.value) { return }
-  auth.requireAdmin(async () => {
-    const ok = await store.saveTeamsRemote(pendingTeams.value!)
-    if (ok) {
-      teamMsg.value = { type: 'success', text: 'Teams imported! Bracket has been reset with new seedings.' }
-      pendingTeams.value = null
-      teamCsvPaste.value = ''
-    } else {
-      teamMsg.value = { type: 'error', text: 'Failed to save teams.' }
-    }
-  })
-}
-
-function cancelTeamImport(): void {
-  pendingTeams.value = null
-  teamMsg.value = null
-}
 
 // --- Round Score Import (CSV) ---
 interface PendingMatch {
@@ -140,35 +82,47 @@ function parseAndPreviewCSV(): void {
     return
   }
 
-  // If Round of 32 and previous round not complete, derive from CSV
+  // If Round of 32 and previous round not complete, score Round of 43 from CSV
   if (ri === 1) {
     const r0 = store.rounds[0]
     const r1 = store.rounds[1]
     const needsDerive = r1.filter(m => !m.isBye).some(m => !m.tA || !m.tB)
     if (needsDerive) {
+      const matches: PendingMatch[] = []
+      const unmatched: string[] = []
       for (let i = 0; i < 21; i++) {
         const tA = r0[i].tA
         const tB = r0[i].tB
         if (!tA || !tB) { continue }
         const dA = lookup[tA.n.toLowerCase()]
         const dB = lookup[tB.n.toLowerCase()]
+        if (!dA) { unmatched.push(tA.n) }
+        if (!dB) { unmatched.push(tB.n) }
         if (!dA || !dB) { continue }
-        const scA = { hc: String(dA.hc), pp: String(dA.pp), rv: String(dA.rv), hg: String(dA.hg) }
-        const scB = { hc: String(dB.hc), pp: String(dB.pp), rv: String(dB.rv), hg: String(dB.hg) }
+        const scA: ScoreMetrics = { hc: String(dA.hc), pp: String(dA.pp), rv: String(dA.rv), hg: String(dA.hg) }
+        const scB: ScoreMetrics = { hc: String(dB.hc), pp: String(dB.pp), rv: String(dB.rv), hg: String(dB.hg) }
         const pA = calcTotal(scA)
         const pB = calcTotal(scB)
         const w = pA > pB ? tA : pB > pA ? tB : (+dA.pp) >= (+dB.pp) ? tA : tB
+        const l = w.s === tA.s ? tB : tA
         r0[i].winner = w
         r0[i].pA = pA
         r0[i].pB = pB
+        matches.push({ ri: 0, mi: i, key: `0-${i}`, scA, scB, pA, pB, winner: w, loser: l, tA, tB })
       }
-      const byeTeam = store.byeTeam
-      r1[0].tA = byeTeam
-      r1[0].tB = r0[20].winner || null
+      // Populate Round of 32 teams from Round of 43 winners
+      r1[0].tA = store.byeTeam
+      r1[0].tB = r0[0].winner || null
       for (let k = 1; k <= 10; k++) {
-        r1[k].tA = r0[k - 1].winner || null
-        r1[k].tB = r0[20 - k].winner || null
+        r1[k].tA = r0[2 * k - 1] ? (r0[2 * k - 1].winner || null) : null
+        r1[k].tB = r0[2 * k] ? (r0[2 * k].winner || null) : null
       }
+      if (unmatched.length > 0) {
+        csvMsg.value = { type: 'error', text: `Could not find CSV data for: ${unmatched.join(', ')}` }
+        return
+      }
+      pendingMatches.value = matches
+      return
     }
   }
 
@@ -208,18 +162,21 @@ async function applyCSVScores(): Promise<void> {
   if (!pendingMatches.value) { return }
   auth.requireAdmin(async () => {
     try {
-      const apiCalls = pendingMatches.value!.map(m => {
-        const sc = { A: m.scA, B: m.scB }
-        store.scores[m.key] = sc
+      const batch = pendingMatches.value!.map(m => ({
+        matchId: m.key,
+        winnerSeed: m.winner.s,
+        scores: { A: m.scA, B: m.scB },
+        points: Math.max(m.pA, m.pB),
+      }))
+      await postAdvanceBatch(auth.adminPassword, batch)
+      pendingMatches.value!.forEach(m => {
+        store.scores[m.key] = { A: m.scA, B: m.scB }
         const match = store.rounds[m.ri][m.mi]
         match.pA = m.pA
         match.pB = m.pB
         match.winner = m.winner
-        const pts = Math.max(m.pA, m.pB)
-        store.totalPts[m.winner.s] = (store.totalPts[m.winner.s] || 0) + pts
-        return postAdvance(auth.adminPassword, m.key, m.winner.s, sc, pts)
+        store.totalPts[m.winner.s] = (store.totalPts[m.winner.s] || 0) + Math.max(m.pA, m.pB)
       })
-      await Promise.all(apiCalls)
       store.syncAll()
       pendingMatches.value = null
       csvPaste.value = ''
@@ -232,25 +189,11 @@ async function applyCSVScores(): Promise<void> {
 
 const roundOptions = ROUND_LABELS.slice(1).map((label, i) => ({ value: i + 1, label }))
 
-const subTab = ref('rounds')
-
-const importTabs = [
-  { key: 'rounds', label: 'Import Round Scores' },
-  { key: 'teams', label: 'Import Teams' },
-]
-
 const winnerCount = computed(() => pendingMatches.value?.length ?? 0)
 </script>
 
 <template>
   <div class="import-container">
-    <SubTabs
-      :tabs="importTabs"
-      :active="subTab"
-      @select="subTab = $event"
-    />
-
-    <div v-if="subTab === 'rounds'">
       <p class="section-desc">
         Paste CSV with columns: DISTRICT, GROSS REV %, NET HSI%, POST CONV, HSI.
         Click <strong>Preview</strong> to see results, then <strong>Apply</strong> to update the bracket.
@@ -314,40 +257,6 @@ const winnerCount = computed(() => pendingMatches.value?.length ?? 0)
       </div>
 
       <div v-if="csvMsg" class="msg" :class="csvMsg.type">{{ csvMsg.text }}</div>
-    </div>
-
-    <div v-if="subTab === 'teams'">
-      <p class="section-desc">
-        Paste CSV with columns: Name, District. Teams will be seeded 1-43 in row order.
-        This resets the entire bracket.
-      </p>
-      <textarea
-        v-model="teamCsvPaste"
-        rows="6"
-        class="csv-input"
-        placeholder="Paste CSV here (include header row)..."
-      ></textarea>
-      <div class="actions">
-        <button class="btn-outline" @click="parseTeamCSV">Preview</button>
-      </div>
-
-      <div v-if="pendingTeams" class="preview-box">
-        <div class="preview-header">{{ pendingTeams.length }} teams found</div>
-        <div class="preview-list">
-          <div v-for="t in pendingTeams" :key="t.s" class="preview-row">
-            <span class="seed">#{{ t.s }}</span>
-            <span class="team-name">{{ t.n }}</span>
-            <span class="dm">{{ t.dm }}</span>
-          </div>
-        </div>
-        <div class="actions" style="padding: 10px">
-          <button class="btn-outline" @click="cancelTeamImport">Cancel</button>
-          <button class="adv-btn" @click="confirmTeamImport">Save &amp; Apply to Bracket</button>
-        </div>
-      </div>
-
-      <div v-if="teamMsg" class="msg" :class="teamMsg.type">{{ teamMsg.text }}</div>
-    </div>
   </div>
 </template>
 
@@ -405,17 +314,6 @@ const winnerCount = computed(() => pendingMatches.value?.length ?? 0)
   background: #fff;
   cursor: pointer;
   font-size: 12px;
-}
-
-.adv-btn {
-  padding: 8px 16px;
-  background: #FA8D29;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 12px;
-  cursor: pointer;
-  font-weight: 500;
 }
 
 .results-container {
@@ -532,47 +430,6 @@ const winnerCount = computed(() => pendingMatches.value?.length ?? 0)
 }
 
 .apply-btn:hover { background: #e07a1a; }
-
-.preview-box {
-  background: #fff;
-  border: 0.5px solid #ddd;
-  border-radius: 12px;
-  overflow: hidden;
-  margin-top: 1rem;
-}
-
-.preview-header {
-  font-size: 12px;
-  color: #555;
-  padding: 8px 14px;
-  border-bottom: 0.5px solid #eee;
-  font-weight: 500;
-}
-
-.preview-list {
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.preview-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 14px;
-  border-bottom: 0.5px solid #eee;
-  font-size: 12px;
-}
-
-.preview-row:last-child { border-bottom: none; }
-
-.seed {
-  font-weight: 500;
-  color: #FA8D29;
-  min-width: 26px;
-}
-
-.team-name { flex: 1; }
-.dm { font-size: 11px; color: #888; }
 
 .msg {
   font-size: 12px;

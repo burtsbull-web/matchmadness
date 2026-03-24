@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import type { Team, Match, ScoreData, ScoreMetrics, TabName, BracketType, Side, RankedTeam } from '@/shared/types'
 import { calcTotal } from '@/shared/scoring'
 import { DEFAULT_TEAMS } from '@/shared/constants'
-import { loadRemoteState, postAdvance, postUndo, postTeams } from '@/api/client'
+import { loadRemoteState, postAdvance, postUndo } from '@/api/client'
 import { useAuthStore } from './auth'
 
 function emptyScore(): ScoreData {
@@ -126,12 +126,14 @@ export const useBracketStore = defineStore('bracket', () => {
     const r0 = rounds.value[0]
     const r1 = rounds.value[1]
 
+    // Bye match: seed #1 vs r0[0] winner
     r1[0].tA = byeTeam.value
-    r1[0].tB = r0[20].winner || null
+    r1[0].tB = r0[0].winner || null
 
+    // Sequential pairing: adjacent r0 matches feed into each r1 match
     for (let k = 1; k <= 10; k++) {
-      r1[k].tA = r0[k - 1] ? (r0[k - 1].winner || null) : null
-      r1[k].tB = r0[20 - k] ? (r0[20 - k].winner || null) : null
+      r1[k].tA = r0[2 * k - 1] ? (r0[2 * k - 1].winner || null) : null
+      r1[k].tB = r0[2 * k] ? (r0[2 * k].winner || null) : null
     }
 
     for (let ri = 2; ri < rounds.value.length; ri++) {
@@ -267,31 +269,9 @@ export const useBracketStore = defineStore('bracket', () => {
     }))
   }
 
-  function applyTeams(newTeams: Team[]): void {
-    teams.value = newTeams
-    rounds.value = buildBracket()
-    lbRounds.value = buildLosersBracket()
-    scores.value = {}
-    totalPts.value = {}
-    syncAll()
-  }
-
-  async function saveTeamsRemote(newTeams: Team[]): Promise<boolean> {
-    const ok = await postTeams(auth.adminPassword, newTeams)
-    if (ok) {
-      applyTeams(newTeams)
-    }
-    return ok
-  }
-
   async function loadState(): Promise<void> {
     try {
-      const { teams: remoteTeams, state: data } = await loadRemoteState()
-
-      if (remoteTeams && remoteTeams.length > 0) {
-        teams.value = remoteTeams
-        rounds.value = buildBracket()
-      }
+      const data = await loadRemoteState()
 
       if (data.scores) { scores.value = data.scores }
       if (data.totalPts) { totalPts.value = data.totalPts }
@@ -412,8 +392,6 @@ export const useBracketStore = defineStore('bracket', () => {
     scoreAndAdvance,
     updateScore,
     loadState,
-    applyTeams,
-    saveTeamsRemote,
     recalcTotalPts,
     emptyScore,
   }
