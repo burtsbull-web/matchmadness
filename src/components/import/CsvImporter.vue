@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { ScoreMetrics } from '@/shared/types'
+import type { ScoreMetrics, Team } from '@/shared/types'
 import { calcTotal } from '@/shared/scoring'
 import { ROUND_LABELS } from '@/shared/constants'
 import { postAdvanceBatch, postImportLog, fetchImportLog, deleteImportLog } from '@/api/client'
@@ -116,65 +116,38 @@ function parseAndPreviewCSV(): void {
 
   const ri = csvRound.value
   store.syncAll()
-  const round = store.rounds[ri]
-  if (!round) {
-    csvMsg.value = { type: 'error', text: 'Invalid round selected.' }
-    return
-  }
 
-  // Round of 32: always score Round of 43 from CSV (even on re-upload)
-  if (ri === 1) {
-    const r0 = store.rounds[0]
-    const matches: PendingMatch[] = []
-    const unmatched: string[] = []
-    for (let i = 0; i < 21; i++) {
-      const tA = r0[i].tA
-      const tB = r0[i].tB
-      if (!tA || !tB) { continue }
-      const dA = lookup[tA.n.toLowerCase()]
-      const dB = lookup[tB.n.toLowerCase()]
-      if (!dA) { unmatched.push(tA.n) }
-      if (!dB) { unmatched.push(tB.n) }
-      if (!dA || !dB) { continue }
-      const scA: ScoreMetrics = { hc: String(dA.hc), pp: String(dA.pp), rv: String(dA.rv), hg: String(dA.hg) }
-      const scB: ScoreMetrics = { hc: String(dB.hc), pp: String(dB.pp), rv: String(dB.rv), hg: String(dB.hg) }
-      const pA = calcTotal(scA)
-      const pB = calcTotal(scB)
-      const w = pA > pB ? tA : pB > pA ? tB : (+dA.pp) >= (+dB.pp) ? tA : tB
-      const l = w.s === tA.s ? tB : tA
-      r0[i].winner = w
-      r0[i].pA = pA
-      r0[i].pB = pB
-      matches.push({ ri: 0, mi: i, key: `0-${i}`, scA, scB, pA, pB, winner: w, loser: l, tA, tB })
-    }
-    store.syncAll()
-    if (unmatched.length > 0) {
-      csvMsg.value = { type: 'error', text: `Could not find CSV data for: ${unmatched.join(', ')}` }
-      return
-    }
-    pendingMatches.value = matches
+  // Score the previous round's matches using CSV data to determine winners
+  const prevRi = ri - 1
+  const prevRound = store.rounds[prevRi]
+  if (!prevRound) {
+    csvMsg.value = { type: 'error', text: 'Invalid round selected.' }
     return
   }
 
   const matches: PendingMatch[] = []
   const unmatched: string[] = []
 
-  round.forEach((m, mi) => {
+  prevRound.forEach((m, mi) => {
     if (m.isBye || !m.tA || !m.tB) { return }
-    const dataA = lookup[m.tA.n.toLowerCase()]
-    const dataB = lookup[m.tB.n.toLowerCase()]
-    if (!dataA) { unmatched.push(m.tA.n) }
-    if (!dataB) { unmatched.push(m.tB.n) }
-    if (dataA && dataB) {
-      const scA: ScoreMetrics = { hc: String(dataA.hc), pp: String(dataA.pp), rv: String(dataA.rv), hg: String(dataA.hg) }
-      const scB: ScoreMetrics = { hc: String(dataB.hc), pp: String(dataB.pp), rv: String(dataB.rv), hg: String(dataB.hg) }
-      const pA = calcTotal(scA)
-      const pB = calcTotal(scB)
-      const winner = pA > pB ? m.tA : pB > pA ? m.tB : (+dataA.pp) >= (+dataB.pp) ? m.tA : m.tB
-      const loser = winner!.s === m.tA.s ? m.tB : m.tA
-      matches.push({ ri, mi, key: `${ri}-${mi}`, scA, scB, pA, pB, winner: winner!, loser: loser!, tA: m.tA, tB: m.tB })
-    }
+    const dA = lookup[m.tA.n.toLowerCase()]
+    const dB = lookup[m.tB.n.toLowerCase()]
+    if (!dA) { unmatched.push(m.tA.n) }
+    if (!dB) { unmatched.push(m.tB.n) }
+    if (!dA || !dB) { return }
+    const scA: ScoreMetrics = { hc: String(dA.hc), pp: String(dA.pp), rv: String(dA.rv), hg: String(dA.hg) }
+    const scB: ScoreMetrics = { hc: String(dB.hc), pp: String(dB.pp), rv: String(dB.rv), hg: String(dB.hg) }
+    const pA = calcTotal(scA)
+    const pB = calcTotal(scB)
+    const w = pA > pB ? m.tA : pB > pA ? m.tB : (+dA.pp) >= (+dB.pp) ? m.tA : m.tB
+    const l = w!.s === m.tA.s ? m.tB : m.tA
+    m.winner = w
+    m.pA = pA
+    m.pB = pB
+    matches.push({ ri: prevRi, mi, key: `${prevRi}-${mi}`, scA, scB, pA, pB, winner: w!, loser: l!, tA: m.tA, tB: m.tB })
   })
+
+  store.syncAll()
 
   if (unmatched.length > 0) {
     csvMsg.value = { type: 'error', text: `Could not find CSV data for: ${unmatched.join(', ')}` }
